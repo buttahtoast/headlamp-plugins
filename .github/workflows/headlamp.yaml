@@ -25,6 +25,8 @@ jobs:
   build:
     needs: find_plugin_dirs
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     defaults:
       run:
@@ -50,8 +52,6 @@ jobs:
           npx @kinvolk/headlamp-plugin@$HEADLAMP_PLUGIN_VERSION tsc ${{ matrix.dir }}
       - env:
           GH_TOKEN: ${{ github.token }}
-        permissions:
-          contents: write
         only:
           - push:
               branches: [main]
@@ -63,3 +63,5 @@ jobs:
             ls -l ${{ matrix.dir }}/dist
             gh release create "$tag_name" ${{ matrix.dir }}/dist/* --title "Release $tag_name" --notes "Release $tag_name"
           fi
+
+          
