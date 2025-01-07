@@ -58,12 +58,9 @@ jobs:
       - name: Create Release
         id: create_release
         run: |
-          dirs=$(echo ${{ steps.find_plugin_dirs.outputs.dirs }} | jq -r '.[]')
-          for dir in $dirs; do
-            name=$(jq -r .name $dir/package.json)
-            version=$(jq -r .version $dir/package.json)
+            name=$(jq -r .name ${{ matrix.dir }}/package.json)
+            version=$(jq -r .version ${{ matrix.dir }}/package.json)
             tag_name="${name}-${version}"
             if ! git rev-parse "$tag_name" >/dev/null 2>&1; then
               gh release create "$tag_name" "$dir/dist/*" --title "Release $tag_name" --notes "Release $tag_name"
             fi
-          done
