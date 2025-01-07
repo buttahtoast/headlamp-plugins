@@ -41,15 +41,21 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: ${{ matrix.node-version }}
-      - env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
+      - run: |
           echo "Checking ${{ matrix.dir }} plugin"
           npx @kinvolk/headlamp-plugin@$HEADLAMP_PLUGIN_VERSION format --check ${{ matrix.dir }}
           npx @kinvolk/headlamp-plugin@$HEADLAMP_PLUGIN_VERSION lint ${{ matrix.dir }}
           npx @kinvolk/headlamp-plugin@$HEADLAMP_PLUGIN_VERSION build ${{ matrix.dir }}
           npx @kinvolk/headlamp-plugin@$HEADLAMP_PLUGIN_VERSION test ${{ matrix.dir }}
           npx @kinvolk/headlamp-plugin@$HEADLAMP_PLUGIN_VERSION tsc ${{ matrix.dir }}
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        permissions:
+          contents: write
+        only:
+          - push:
+              branches: [main]
+        run: |    
           name=$(jq -r .name ${{ matrix.dir }}/package.json)
           version=$(jq -r .version ${{ matrix.dir }}/package.json)
           tag_name="${name}-${version}"
