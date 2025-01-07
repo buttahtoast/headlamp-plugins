@@ -7,7 +7,6 @@ import PodList from './kubevirt/VirtualMachines/List';
 
 addIcon('eos-icons:virtual-guest', {});
 addIcon('codicon:vm', {});
-addIcon('ci:instance', {});
 
 registerSidebarEntry({
   parent: null,
