@@ -41,7 +41,6 @@ jobs:
         uses: actions/setup-node@v3
         env:
           GH_TOKEN: ${{ github.token }}
-        with:
           node-version: ${{ matrix.node-version }}
       - run: |
           echo "Checking ${{ matrix.dir }} plugin"
