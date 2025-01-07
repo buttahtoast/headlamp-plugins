@@ -39,10 +39,11 @@ jobs:
       - uses: actions/checkout@v3
       - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v3
-        env:
-          GH_TOKEN: ${{ github.token }}
+        with:
           node-version: ${{ matrix.node-version }}
-      - run: |
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
           echo "Checking ${{ matrix.dir }} plugin"
           npx @kinvolk/headlamp-plugin@$HEADLAMP_PLUGIN_VERSION format --check ${{ matrix.dir }}
           npx @kinvolk/headlamp-plugin@$HEADLAMP_PLUGIN_VERSION lint ${{ matrix.dir }}
