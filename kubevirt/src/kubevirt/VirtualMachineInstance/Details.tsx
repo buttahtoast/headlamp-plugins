@@ -1,16 +1,11 @@
 import { Link, Resource } from '@kinvolk/headlamp-plugin/lib/components/common';
 import { ActionButton } from '@kinvolk/headlamp-plugin/lib/components/common';
-// import {
-//   EventStatus,
-//   HeadlampEventType,
-//   useEventCallback,
-// } from '@kinvolk/headlamp-plugin/lib/redux/headlampEventSlice';
-//import { useSnackbar } from 'notistack';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router-dom';
 import Terminal from '../Terminal/Terminal';
 import VirtualMachineInstance from './VirtualMachineInstance';
+
 
 export interface VirtualMachineDetailsProps {
   showLogsDefault?: boolean;
@@ -85,13 +80,6 @@ export default function VirtualMachineInstanceDetails(props: VirtualMachineDetai
                   icon="mdi:console"
                   onClick={() => {
                     setShowTerminal(true);
-                    // dispatchHeadlampEvent({
-                    //   type: HeadlampEventType.TERMINAL,
-                    //   data: {
-                    //     resource: item,
-                    //     status: EventStatus.CLOSED,
-                    //   },
-                    // });
                   }}
                 />
               </Resource.AuthVisible>

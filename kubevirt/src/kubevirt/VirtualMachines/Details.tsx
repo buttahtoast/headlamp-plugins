@@ -5,6 +5,7 @@ import { useSnackbar } from 'notistack';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router-dom';
+import Terminal from '../Terminal/Terminal'
 import VirtualMachine from './VirtualMachine';
 
 export interface VirtualMachineDetailsProps {
@@ -18,6 +19,8 @@ export default function VirtualMachineDetails(props: VirtualMachineDetailsProps)
   const { name = params.name, namespace = params.namespace } = props;
   const { t } = useTranslation('glossary');
   const { enqueueSnackbar } = useSnackbar();
+  const [showTerminal, setShowTerminal] = useState(false);
+
   const [podName, setPodName] = useState<string | null>(null);
   useEffect(() => {
     const fetchPodName = async () => {
@@ -78,6 +81,19 @@ export default function VirtualMachineDetails(props: VirtualMachineDetailsProps)
             id: 'status',
             section: <Resource.ConditionsSection resource={item?.jsonData} />,
           },
+                    {
+                      id: 'headlamp.vm-terminal',
+                      section: (
+                                    <Terminal
+                                      open={showTerminal}
+                                      key="terminal"
+                                      item={item}
+                                      onClose={() => {
+                                        setShowTerminal(false);
+                                      }}
+                                    />
+                                  ),
+                    },
         ]
       }
       actions={item =>
@@ -118,6 +134,21 @@ export default function VirtualMachineDetails(props: VirtualMachineDetailsProps)
                   }
                 }}
               ></ActionButton>
+            ),
+          },
+          {
+            id: 'console',
+            action: (
+              <Resource.AuthVisible item={item} authVerb="get" subresource="exec">
+                <ActionButton
+                  description={t('Terminal / Exec')}
+                  aria-label={t('terminal')}
+                  icon="mdi:console"
+                  onClick={() => {
+                    setShowTerminal(true);
+                  }}
+                />
+              </Resource.AuthVisible>
             ),
           },
         ]

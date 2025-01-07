@@ -1,5 +1,5 @@
 {
-  "name": "headlamp-kubevirt",
+  "name": "kubevirt",
   "version": "0.0.1",
   "description": "kubevirt",
   "scripts": {
