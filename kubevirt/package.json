@@ -1,6 +1,6 @@
 {
   "name": "kubevirt",
-  "version": "0.0.1",
+  "version": "v0.0.1-beta",
   "description": "A plugin for managing KubeVirt virtual machines within a Kubernetes cluster.",
   "scripts": {
     "start": "headlamp-plugin start",

@@ -20,6 +20,13 @@ jobs:
       - uses: actions/checkout@v2
       - id: dirs
         run: echo "dirs=$(grep -m1 -lR @kinvolk/headlamp-plugin ./*/package.json | xargs -n1 dirname | jq --raw-input --slurp --compact-output 'split("\n")[:-1]')" >> ${GITHUB_OUTPUT}
+  release:
+    needs: find_plugin_dirs
+    runs-on: ubuntu-latest
+    steps:
+
+      - uses: actions/checkout@v2
+
 
   build:
     needs: find_plugin_dirs
@@ -47,3 +54,16 @@ jobs:
           npx @kinvolk/headlamp-plugin@$HEADLAMP_PLUGIN_VERSION build ${{ matrix.dir }}
           npx @kinvolk/headlamp-plugin@$HEADLAMP_PLUGIN_VERSION test ${{ matrix.dir }}
           npx @kinvolk/headlamp-plugin@$HEADLAMP_PLUGIN_VERSION tsc ${{ matrix.dir }}
+          
+      - name: Create Release
+        id: create_release
+        run: |
+          dirs=$(echo ${{ steps.find_plugin_dirs.outputs.dirs }} | jq -r '.[]')
+          for dir in $dirs; do
+            name=$(jq -r .name $dir/package.json)
+            version=$(jq -r .version $dir/package.json)
+            tag_name="${name}-${version}"
+            if ! git rev-parse "$tag_name" >/dev/null 2>&1; then
+              gh release create "$tag_name" "$dir/dist/*" --title "Release $tag_name" --notes "Release $tag_name"
+            fi
+          done
