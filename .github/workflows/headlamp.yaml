@@ -50,6 +50,7 @@ jobs:
           npx @kinvolk/headlamp-plugin@$HEADLAMP_PLUGIN_VERSION build ${{ matrix.dir }}
           npx @kinvolk/headlamp-plugin@$HEADLAMP_PLUGIN_VERSION test ${{ matrix.dir }}
           npx @kinvolk/headlamp-plugin@$HEADLAMP_PLUGIN_VERSION tsc ${{ matrix.dir }}
+          npx @kinvolk/headlamp-plugin@$HEADLAMP_PLUGIN_VERSION package ${{ matrix.dir }}
       - env:
           GH_TOKEN: ${{ github.token }}
         if: github.ref == 'refs/heads/main'
@@ -59,7 +60,7 @@ jobs:
           tag_name="${name}-${version}"
           if ! git rev-parse "$tag_name" >/dev/null 2>&1; then
             ls -l ${{ matrix.dir }}/dist
-            gh release create "$tag_name" ${{ matrix.dir }}/dist/* --title "Release $tag_name" --notes "Release $tag_name"
+            gh release create "$tag_name" ${tag_name}.tar.gz --title "Release $tag_name" --notes "Release $tag_name"
           fi
 
           
