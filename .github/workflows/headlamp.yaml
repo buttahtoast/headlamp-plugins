@@ -52,7 +52,7 @@ jobs:
           npx @kinvolk/headlamp-plugin@$HEADLAMP_PLUGIN_VERSION tsc ${{ matrix.dir }}
       - env:
           GH_TOKEN: ${{ github.token }}
-        if: github.ref == 'refs/heads/master'
+        if: github.ref == 'refs/heads/main'
         run: |    
           name=$(jq -r .name ${{ matrix.dir }}/package.json)
           version=$(jq -r .version ${{ matrix.dir }}/package.json)
