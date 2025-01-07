@@ -1,25 +1,22 @@
-import { Link, Resource } from '@kinvolk/headlamp-plugin/lib/components/common';
-import { ActionButton } from '@kinvolk/headlamp-plugin/lib/components/common';
+import { ActionButton,Link, Resource } from '@kinvolk/headlamp-plugin/lib/components/common';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router-dom';
 import Terminal from '../Terminal/Terminal';
 import VirtualMachineInstance from './VirtualMachineInstance';
 
-
-export interface VirtualMachineDetailsProps {
+export interface VirtualMachineInstanceDetailsProps {
   showLogsDefault?: boolean;
   name?: string;
   namespace?: string;
 }
-export default function VirtualMachineInstanceDetails(props: VirtualMachineDetailsProps) {
+
+export default function VirtualMachineInstanceDetails(props: VirtualMachineInstanceDetailsProps) {
   const params = useParams<{ namespace: string; name: string }>();
   const { name = params.name, namespace = params.namespace } = props;
   const { t } = useTranslation('glossary');
   const [showTerminal, setShowTerminal] = useState(false);
-  console.log(showTerminal);
-  //const dispatchHeadlampEvent = useEventCallback();
-  //const { enqueueSnackbar } = useSnackbar();
+
   return (
     <Resource.DetailsGrid
       name={name}
@@ -54,15 +51,13 @@ export default function VirtualMachineInstanceDetails(props: VirtualMachineDetai
             section: <Resource.ConditionsSection resource={item?.jsonData} />,
           },
           {
-            id: 'headlamp.vm-terminal',
+            id: 'vm-terminal',
             section: (
               <Terminal
                 open={showTerminal}
                 key="terminal"
                 item={item}
-                onClose={() => {
-                  setShowTerminal(false);
-                }}
+                onClose={() => setShowTerminal(false)}
               />
             ),
           },
@@ -78,9 +73,7 @@ export default function VirtualMachineInstanceDetails(props: VirtualMachineDetai
                   description={t('Terminal / Exec')}
                   aria-label={t('terminal')}
                   icon="mdi:console"
-                  onClick={() => {
-                    setShowTerminal(true);
-                  }}
+                  onClick={() => setShowTerminal(true)}
                 />
               </Resource.AuthVisible>
             ),

@@ -25,7 +25,6 @@ class VirtualMachineInstance extends KubeObject {
     onExec: StreamResultsCb,
     options: StreamArgs
   ): { cancel: () => void; getSocket: () => WebSocket } {
-    //const commandStr = command.map(item => '&command=' + encodeURIComponent(item)).join('');
     const url = `/apis/subresources.kubevirt.io/v1/namespaces/${this.getNamespace()}/virtualmachineinstances/${this.getName()}/console`;
     return ApiProxy.stream(url, onExec, {
       isJson: false,
@@ -39,10 +38,5 @@ class VirtualMachineInstance extends KubeObject {
   static isNamespaced = true;
   static apiName = 'virtualmachineinstances';
 }
-
-// VirtualMachine.kind = 'VirtualMachine';
-// VirtualMachine.apiName = 'virtualmachines';
-// VirtualMachine.apiVersion = 'kubevirt.io/v1';
-// VirtualMachine.isNamespaced = true;
 
 export default VirtualMachineInstance;

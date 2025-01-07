@@ -46,9 +46,4 @@ class VirtualMachine extends KubeObject {
   static apiName = 'virtualmachines';
 }
 
-// VirtualMachine.kind = 'VirtualMachine';
-// VirtualMachine.apiName = 'virtualmachines';
-// VirtualMachine.apiVersion = 'kubevirt.io/v1';
-// VirtualMachine.isNamespaced = true;
-
 export default VirtualMachine;

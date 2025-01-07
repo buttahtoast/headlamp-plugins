@@ -7,7 +7,6 @@ import { Box } from '@mui/material';
 import DialogContent from '@mui/material/DialogContent';
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal as XTerminal } from '@xterm/xterm';
-import _ from 'lodash';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import VirtualMachineInstance from '../VirtualMachineInstance/VirtualMachineInstance';
@@ -42,8 +41,6 @@ type execReturn = ReturnType<ConsoleObject['exec']>;
 
 export default function Terminal(props: TerminalProps) {
   const { item, onClose, ...other } = props;
-  //const [terminalContainerRef, setTerminalContainerRef] = useState<HTMLElement | null>(null);
-  //needed ?
   const execRef = useRef<execReturn | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const xtermRef = useRef<XTerminalConnected | null>(null);
@@ -125,9 +122,6 @@ export default function Terminal(props: TerminalProps) {
     console.log(bytes);
     xterm.write(text);
   }
-  // function shellConnectFailed(xtermc: XTerminalConnected) {
-  //   xterm.write(t('Failed to connect…') + '\r\n');
-  // }
   useEffect(
     () => {
       console.log('useEffect');
