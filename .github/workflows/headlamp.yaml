@@ -54,5 +54,6 @@ jobs:
           version=$(jq -r .version ${{ matrix.dir }}/package.json)
           tag_name="${name}-${version}"
           if ! git rev-parse "$tag_name" >/dev/null 2>&1; then
-            gh release create "$tag_name" "${{ matrix.dir }}/dist/*" --title "Release $tag_name" --notes "Release $tag_name"
+            ls -l ${{ matrix.dir }}/dist
+            gh release create "$tag_name" ${{ matrix.dir }}/dist/* --title "Release $tag_name" --notes "Release $tag_name"
           fi
