@@ -1,0 +1,42 @@
+
+# This file contains the deployment configuration for Headlamp, a web-based Kubernetes dashboard.
+
+# It includes the necessary configurations for the KubeVirt plugin, 
+# which allows users to manage KubeVirt resources directly from Headlamp.
+
+# The deployment file can be donwloaded from \
+# "https://raw.githubusercontent.com/kinvolk/headlamp/main/kubernetes-headlamp.yaml" and update with below content.
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: headlamp
+  namespace: kube-system
+spec:
+  # (Keep other fields the same as in the original deployment spec)
+  template:
+    spec:
+      volumes:
+        - name: plugin-volume
+          emptyDir: {}
+
+      initContainers:
+        - name: kubevirt-plugin
+          image: docker.io/praveen21b/kubevirt-plugin:v0.0.1-beta3
+          command:
+            - "/bin/sh"
+            - "-c"
+          args:
+            - cp -r /plugins/kubevirt/* /headlamp/plugins/kubevirt/
+          volumeMounts:
+            - name: plugin-volume
+              mountPath: /headlamp/plugins/kubevirt
+
+      containers:
+        - name: headlamp
+          # (Other container fields remain unchanged)
+          volumeMounts:
+            - name: plugin-volume
+              mountPath: /headlamp/plugins/kubevirt
+          # (Other container configuration stays the same)
+      # (Keep other fields the same as in the original deployment spec)

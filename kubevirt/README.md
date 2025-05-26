@@ -1,15 +1,25 @@
-# headlamp-kubevirt
+# KubeVirt Plugin for Headlamp
+The **KubeVirt Plugin** is a [Headlamp](https://headlamp.dev/) extension that adds native support for managing [KubeVirt](https://kubevirt.io/) resources directly within the Headlamp UI. It enhances your Kubernetes dashboard with intuitive views and controls for managing Virtual Machines (VMs), Virtual Machine Instances (VMIs), and other KubeVirt-related resources.
 
-This is the default template README for [Headlamp Plugins](https://github.com/headlamp-k8s/headlamp).
 
-- The description of your plugin should go here.
-- You should also edit the package.json file meta data (like name and description).
+## 📋 Prerequisites
+- A running Kubernetes cluster with [KubeVirt installed](https://kubevirt.io/quickstart_kind/)
+- [VMs](https://kubevirt.io/user-guide/user_workloads/virtual_machine_instances/) are deloyed with use of KubeVirt
 
-## Developing Headlamp plugins
+## 🚀 Installation Steps (On-Cluster Setup)
+Add an `initContainer` to the Headlamp deployment that copies the KubeVirt plugin files into a shared volume before the main Headlamp container starts.
 
-For more information on developing Headlamp plugins, please refer to:
+To install Headlamp, follow the instructions [here](https://headlamp.dev/docs/latest/installation/in-cluster/).
 
-- [Getting Started](https://headlamp.dev/docs/latest/development/plugins/), How to create a new Headlamp plugin.
-- [API Reference](https://headlamp.dev/docs/latest/development/api/), API documentation for what you can do
-- [UI Component Storybook](https://headlamp.dev/docs/latest/development/frontend/#storybook), pre-existing components you can use when creating your plugin.
-- [Plugin Examples](https://github.com/headlamp-k8s/headlamp/tree/main/plugins/examples), Example plugins you can look at to see how it's done.
+Before headlamp installation, update your manifest files or Helm values with the [these](./headlamp-values/) configuration.
+
+## 🎥 Demo
+
+After applying the deployment changes, access Headlamp.
+
+<div align="center">
+  <img src="https://raw.githubusercontent.com/buttahtoast/headlamp-plugins/bf/video-render/kubevirt/demo/demo-kubevirt-plugin.gif" width="80%">
+</div>
+
+## 🙋 Contact
+For any questions or feedback, please open an issue on the GitHub repository.
