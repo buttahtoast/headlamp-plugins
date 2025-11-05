@@ -1,34 +1,24 @@
 //import { Icon } from '@iconify/react';
 import { K8s } from '@kinvolk/headlamp-plugin/lib';
-import {
-  //LightTooltip,
-  Link,
-  ResourceTableProps,
-  SimpleTableProps,
-  //StatusLabel,
-  //StatusLabelProps,
-} from '@kinvolk/headlamp-plugin/lib/CommonComponents';
+import { Link, SimpleTableProps } from '@kinvolk/headlamp-plugin/lib/CommonComponents';
 import { Resource } from '@kinvolk/headlamp-plugin/lib/components/common';
 import { ApiError } from '@kinvolk/headlamp-plugin/lib/lib/k8s/apiProxy';
-//import { Box } from '@mui/material';
-//import { useTranslation } from 'react-i18next';
 import VirtualMachineInstance from './VirtualMachineInstance';
 
-export interface PodListProps {
-  virtualMachine: VirtualMachineInstance[] | null;
+export interface VirtualMachineInstanceListProps {
+  virtualMachineInstances: VirtualMachineInstance[] | null;
   error: ApiError | null;
   hideColumns?: ['namespace'];
   reflectTableInURL?: SimpleTableProps['reflectInURL'];
   noNamespaceFilter?: boolean;
-  clusterErrors?: ResourceTableProps<VirtualMachineInstance>['clusterErrors'];
 }
 
-export function PodListRenderer(props: PodListProps) {
-  const { virtualMachine, error, hideColumns = [], noNamespaceFilter } = props;
+export function VirtualMachineInstanceListRenderer(props: VirtualMachineInstanceListProps) {
+  const { virtualMachineInstances, error, hideColumns = [], noNamespaceFilter } = props;
   //const { t } = useTranslation(['glossary', 'translation']);
   return (
     <Resource.ResourceListView
-      title={'Virtual Machines Instances'}
+      title={'Virtual Machine Instances'}
       headerProps={{
         noNamespaceFilter,
       }}
@@ -38,13 +28,16 @@ export function PodListRenderer(props: PodListProps) {
         {
           id: 'name',
           label: 'Name',
-          getValue: virtualMachine => virtualMachine.getName(),
-          render: virtualMachine => (
+          getValue: virtualMachineInstance => virtualMachineInstance.getName(),
+          render: virtualMachineInstance => (
             <Link
-              routeName="/kubevirt/virtualmachinesinstances/:namespace/:name"
-              params={{ name: virtualMachine.getName(), namespace: virtualMachine.getNamespace() }}
+              routeName="/kubevirt/virtualmachineinstances/:namespace/:name"
+              params={{
+                name: virtualMachineInstance.getName(),
+                namespace: virtualMachineInstance.getNamespace(),
+              }}
             >
-              {virtualMachine.getName()}
+              {virtualMachineInstance.getName()}
             </Link>
           ),
         },
@@ -53,48 +46,52 @@ export function PodListRenderer(props: PodListProps) {
         {
           id: 'ready',
           label: 'Ready',
-          getValue: virtualMachine => virtualMachine.status?.ready ?? 'unknown',
+          getValue: virtualMachineInstance => virtualMachineInstance.status?.ready ?? 'unknown',
         },
         {
           id: 'status',
           label: 'Status',
-          getValue: virtualMachine => virtualMachine.status?.printableStatus,
+          getValue: virtualMachineInstance => virtualMachineInstance.status?.printableStatus,
         },
         {
           id: 'ip',
           label: 'IP',
-          getValue: virtualMachine => virtualMachine.status?.podIP ?? '',
+          getValue: virtualMachineInstance => virtualMachineInstance.status?.podIP ?? '',
         },
         {
           id: 'node',
           label: 'Node',
-          getValue: virtualMachine => virtualMachine?.spec?.nodeName,
-          render: virtualMachine =>
-            virtualMachine?.spec?.nodeName && (
-              <Link routeName="node" params={{ name: virtualMachine.spec.nodeName }} tooltip>
-                {virtualMachine.spec.nodeName}
+          getValue: virtualMachineInstance => virtualMachineInstance?.spec?.nodeName,
+          render: virtualMachineInstance =>
+            virtualMachineInstance?.spec?.nodeName && (
+              <Link
+                routeName="node"
+                params={{ name: virtualMachineInstance.spec.nodeName }}
+                tooltip
+              >
+                {virtualMachineInstance.spec.nodeName}
               </Link>
             ),
         },
         {
           id: 'nominatedNode',
           label: 'Nominated Node',
-          getValue: virtualMachine => virtualMachine?.status?.nominatedNodeName,
-          render: virtualMachine =>
-            !!virtualMachine?.status?.nominatedNodeName && (
+          getValue: virtualMachineInstance => virtualMachineInstance?.status?.nominatedNodeName,
+          render: virtualMachineInstance =>
+            !!virtualMachineInstance?.status?.nominatedNodeName && (
               <Link
                 routeName="node"
-                params={{ name: virtualMachine?.status?.nominatedNodeName }}
+                params={{ name: virtualMachineInstance?.status?.nominatedNodeName }}
                 tooltip
               >
-                {virtualMachine?.status?.nominatedNodeName}
+                {virtualMachineInstance?.status?.nominatedNodeName}
               </Link>
             ),
           show: false,
         },
         'age',
       ]}
-      data={virtualMachine}
+      data={virtualMachineInstances}
       reflectInURL
       id="headlamp-virtualmachines"
     />
@@ -102,12 +99,11 @@ export function PodListRenderer(props: PodListProps) {
 }
 
 export default function VirtualMachineInstanceList() {
-  const { items, error, clusterErrors } = VirtualMachineInstance.useList({});
+  const { items, error } = VirtualMachineInstance.useList({});
   return (
-    <PodListRenderer
-      virtualMachine={items}
+    <VirtualMachineInstanceListRenderer
+      virtualMachineInstances={items}
       error={error}
-      clusterErrors={clusterErrors}
       reflectTableInURL
       noNamespaceFilter={false}
     />

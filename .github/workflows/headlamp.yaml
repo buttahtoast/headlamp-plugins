@@ -17,10 +17,9 @@ jobs:
     outputs:
       dirs: ${{ steps.dirs.outputs.dirs }}
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - id: dirs
         run: echo "dirs=$(grep -m1 -lR @kinvolk/headlamp-plugin ./*/package.json | xargs -n1 dirname | jq --raw-input --slurp --compact-output 'split("\n")[:-1]')" >> ${GITHUB_OUTPUT}
-
 
   build:
     needs: find_plugin_dirs
@@ -34,15 +33,45 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [18.x]
+        node-version: [21.x]
         dir: ${{ fromJson(needs.find_plugin_dirs.outputs.dirs) }}
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+
+      - name: Extract plugin info
+        run: |
+          name=$(jq -r .name ${{ matrix.dir }}/package.json)
+          version=$(jq -r .version ${{ matrix.dir }}/package.json)
+          tag_name="${name}-${version}"
+          clean_dir=$(echo "${{ matrix.dir }}" | sed 's|^\./||' | sed 's/"/ /g')
+          echo "PLUGIN_NAME=$name" >> $GITHUB_ENV
+          echo "PLUGIN_VERSION=$version" >> $GITHUB_ENV
+          echo "TAG_NAME=$tag_name" >> $GITHUB_ENV
+          echo "CLEAN_DIR=$clean_dir" >> $GITHUB_ENV
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build and push
+        id: build-push
+        uses: docker/build-push-action@v6
+        with:
+          push: ${{ github.event_name != 'pull_request' }}
+          load: ${{ github.event_name == 'pull_request' }}
+          build-args: PLUGIN=${{ env.CLEAN_DIR }}
+          context: .
+          no-cache: false
+          tags: |
+            ${{ github.event_name != 'pull_request' && format('ghcr.io/{0}/{1}:latest', github.repository, env.CLEAN_DIR) || '' }}
+            ${{ github.event_name != 'pull_request' && format('ghcr.io/{0}/{1}:{2}', github.repository, env.CLEAN_DIR, env.PLUGIN_VERSION) || '' }}
+            ${{ format('ghcr.io/{0}/{1}:{2}', github.repository, env.CLEAN_DIR, github.sha) || '' }}
       - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: '${{ matrix.dir }}/package-lock.json'
       - run: |
           echo "Checking ${{ matrix.dir }} plugin"
           npx @kinvolk/headlamp-plugin@$HEADLAMP_PLUGIN_VERSION format --check ${{ matrix.dir }}
@@ -51,16 +80,11 @@ jobs:
           npx @kinvolk/headlamp-plugin@$HEADLAMP_PLUGIN_VERSION test ${{ matrix.dir }}
           npx @kinvolk/headlamp-plugin@$HEADLAMP_PLUGIN_VERSION tsc ${{ matrix.dir }}
           npx @kinvolk/headlamp-plugin@$HEADLAMP_PLUGIN_VERSION package ${{ matrix.dir }}
-      - env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Create release
         if: github.ref == 'refs/heads/main'
-        run: |    
-          name=$(jq -r .name ${{ matrix.dir }}/package.json)
-          version=$(jq -r .version ${{ matrix.dir }}/package.json)
-          tag_name="${name}-${version}"
-          if ! git rev-parse "$tag_name" >/dev/null 2>&1; then
-            ls -l ${{ matrix.dir }}/dist
-            gh release create "$tag_name" ${tag_name}.tar.gz --generate-notes --title "Release $tag_name" --notes "Release $tag_name"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! git rev-parse "${{ env.TAG_NAME }}" >/dev/null 2>&1; then
+            gh release create "${{ env.TAG_NAME }}" "${{ env.TAG_NAME }}.tar.gz" --generate-notes --title "Release ${{ env.TAG_NAME }}" --notes "Release ${{ env.TAG_NAME }}\nDockerfile: ${{ format('ghcr.io/{0}/{1}:{2}', github.repository, env.CLEAN_DIR, env.PLUGIN_VERSION) || '' }}"
           fi
-
-          
