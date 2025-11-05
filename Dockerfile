@@ -1,5 +1,5 @@
 # Use the official Node.js 18 image as the base image for building the plugins
-FROM node:18@sha256:d0bbfdbad0bff8253e6159dcbee42141db4fc309365d5b8bcfce46ed71569078 AS builder
+FROM node:21 AS builder
 
 # Set the working directory inside the container
 WORKDIR /headlamp-plugins
@@ -34,13 +34,10 @@ RUN echo "Extracting plugin $PLUGIN..."; \
     cd /headlamp-plugins/$PLUGIN; \
     npx --no-install headlamp-plugin extract . /headlamp-plugins/build/${PLUGIN}
 
-FROM alpine:3.20.3@sha256:beefdbd8a1da6d2915566fde36db9db0b524eb737fc57cd1367effd16dc0d06d
+FROM alpine
 
 # Copy the built plugin files from the builder stage to the /plugins directory in the final image
 COPY --from=builder /headlamp-plugins/build/ /plugins/
 
 LABEL org.opencontainers.image.source=https://github.com/buttahtoast/headlamp-plugins
 LABEL org.opencontainers.image.licenses=MIT
-
-# Set the default command to list the installed plugins
-CMD ["sh", "-c", "echo Plugins installed at /plugins/:; ls /plugins/"]

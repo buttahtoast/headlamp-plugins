@@ -3,7 +3,6 @@ import { K8s } from '@kinvolk/headlamp-plugin/lib';
 import {
   //LightTooltip,
   Link,
-  ResourceTableProps,
   SimpleTableProps,
   //StatusLabel,
   //StatusLabelProps,
@@ -20,7 +19,6 @@ export interface PodListProps {
   hideColumns?: ['namespace'];
   reflectTableInURL?: SimpleTableProps['reflectInURL'];
   noNamespaceFilter?: boolean;
-  clusterErrors?: ResourceTableProps<VirtualMachine>['clusterErrors'];
 }
 
 export function PodListRenderer(props: PodListProps) {
@@ -102,12 +100,11 @@ export function PodListRenderer(props: PodListProps) {
 }
 
 export default function PodList() {
-  const { items, error, clusterErrors } = VirtualMachine.useList({});
+  const { items, error } = VirtualMachine.useList({});
   return (
     <PodListRenderer
       virtualMachine={items}
       error={error}
-      clusterErrors={clusterErrors}
       reflectTableInURL
       noNamespaceFilter={false}
     />

@@ -1,12 +1,8 @@
-import { addIcon } from '@iconify/react';
 import { registerRoute, registerSidebarEntry } from '@kinvolk/headlamp-plugin/lib';
 import VirtualMachineInstanceDetail from './kubevirt/VirtualMachineInstance/Details';
 import VirtualMachineInstanceList from './kubevirt/VirtualMachineInstance/List';
 import VirtualMachineDetail from './kubevirt/VirtualMachines/Details';
 import PodList from './kubevirt/VirtualMachines/List';
-
-addIcon('eos-icons:virtual-guest', {});
-addIcon('codicon:vm', {});
 
 registerSidebarEntry({
   parent: null,
