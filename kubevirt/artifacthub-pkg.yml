@@ -4,9 +4,6 @@ displayName: Kubevirt
 createdAt: "2025-01-01T00:00:00Z"
 logoURL: "https://github.com/kubevirt/community/blob/main/logo/KubeVirt_icon.png?raw=true"
 description: "A plugin for managing KubeVirt virtual machines within a Kubernetes cluster."
-owners:
-  - name: Kevin Klopfenstein
-    email: kk@sudo-i.net
 annotations:
   headlamp/plugin/archive-url: "https://github.com/buttahtoast/headlamp-plugins/releases/download/kubevirt-v0.0.1-beta4/kubevirt-v0.0.1-beta4.tar.gz"
   headlamp/plugin/archive-checksum: "SHA256:77cfd22a90964804b16780f66c627f4e913223f6a6a4b2e0e5efb2b24ba36467"
