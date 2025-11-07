@@ -22,6 +22,7 @@ export default function VirtualMachineInstanceDetails(props: VirtualMachineInsta
       name={name}
       namespace={namespace}
       resourceType={VirtualMachineInstance}
+      withEvents
       extraInfo={item =>
         item && [
           {

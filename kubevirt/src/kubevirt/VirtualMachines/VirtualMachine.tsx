@@ -1,9 +1,9 @@
-import { StreamArgs, StreamResultsCb } from '@kinvolk/headlamp-plugin/lib/ApiProxy';
+import ApiProxy, { StreamArgs, StreamResultsCb } from '@kinvolk/headlamp-plugin/lib/ApiProxy';
 import { KubeObject } from '@kinvolk/headlamp-plugin/lib/K8s/cluster';
 import VirtualMachineInstance from '../VirtualMachineInstance/VirtualMachineInstance';
 
 class VirtualMachine extends KubeObject {
-  constructor(jsonData) {
+  constructor(jsonData: any) {
     super(jsonData);
   }
 
@@ -47,6 +47,33 @@ class VirtualMachine extends KubeObject {
   async unpause() {
     const instance = new VirtualMachineInstance(this.jsonData);
     return instance.unpause();
+  }
+
+  async migrate() {
+    const migrationName = `${this.getName()}-migration-${Date.now()}`;
+    const migration = {
+      apiVersion: 'kubevirt.io/v1',
+      kind: 'VirtualMachineInstanceMigration',
+      metadata: {
+        name: migrationName,
+        namespace: this.getNamespace(),
+      },
+      spec: {
+        vmiName: this.getName(),
+      },
+    };
+
+    await ApiProxy.request(
+      `/apis/kubevirt.io/v1/namespaces/${this.getNamespace()}/virtualmachineinstancemigrations`,
+      {
+        method: 'POST',
+        body: JSON.stringify(migration),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+    return migrationName;
   }
 
   static kind = 'VirtualMachine';
