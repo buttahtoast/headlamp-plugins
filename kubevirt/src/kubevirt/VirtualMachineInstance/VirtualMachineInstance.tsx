@@ -33,6 +33,16 @@ class VirtualMachineInstance extends KubeObject {
     });
   }
 
+  async pause() {
+    const url = `/apis/subresources.kubevirt.io/v1/namespaces/${this.getNamespace()}/virtualmachineinstances/${this.getName()}/pause`;
+    return ApiProxy.request(url, { method: 'PUT', isJSON: false });
+  }
+
+  async unpause() {
+    const url = `/apis/subresources.kubevirt.io/v1/namespaces/${this.getNamespace()}/virtualmachineinstances/${this.getName()}/unpause`;
+    return ApiProxy.request(url, { method: 'PUT', isJSON: false });
+  }
+
   static kind = 'VirtualMachineInstance';
   static apiVersion = 'kubevirt.io/v1';
   static isNamespaced = true;

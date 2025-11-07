@@ -50,10 +50,7 @@ export default function VirtualMachineDetails(props: VirtualMachineDetailsProps)
             value: (
               <Link
                 routeName="/kubevirt/virtualmachinesinstances/:namespace/:name"
-                params={{
-                  name: item.getName(),
-                  namespace: item.getNamespace(),
-                }}
+                params={{ name: item.getName(), namespace: item.getNamespace() }}
               >
                 {item.getName()}
               </Link>
@@ -96,47 +93,118 @@ export default function VirtualMachineDetails(props: VirtualMachineDetailsProps)
           },
         ]
       }
-      actions={item =>
-        item && [
-          {
+      actions={item => {
+        if (!item) return [];
+        const printableStatus = item.jsonData.status?.printableStatus || '';
+        const conditions = item.jsonData.status?.conditions || [];
+        const isPaused =
+          conditions.some(c => c.type === 'Paused' && c.status === 'True') ||
+          printableStatus === 'Paused';
+        const isRunning = printableStatus === 'Running' && !isPaused;
+
+        const actionsList = [];
+
+        if (!isRunning && !isPaused) {
+          actionsList.push({
             id: 'start',
             action: (
               <ActionButton
                 description={t('Start')}
                 icon="mdi:play"
                 onClick={() => {
-                  console.log('start ' + item.getName());
-                  try {
-                    item.start();
-                    enqueueSnackbar('Virtual Machine started', { variant: 'success' });
-                  } catch (e) {
-                    console.error('start failed', e);
-                    enqueueSnackbar('Failed to start Virtual Machine', { variant: 'error' });
-                  }
+                  console.log('Starting ' + item.getName());
+                  item
+                    .start()
+                    .then(() =>
+                      enqueueSnackbar(t('Virtual Machine started'), { variant: 'success' })
+                    )
+                    .catch(e => {
+                      console.error('Start failed', e);
+                      enqueueSnackbar(t('Failed to start Virtual Machine'), { variant: 'error' });
+                    });
                 }}
-              ></ActionButton>
+              />
             ),
-          },
-          {
+          });
+        }
+
+        if (isRunning || isPaused) {
+          actionsList.push({
             id: 'stop',
             action: (
               <ActionButton
                 description={t('Stop')}
                 icon="mdi:stop"
                 onClick={() => {
-                  console.log('start ' + item.getName());
-                  try {
-                    item.stop();
-                    enqueueSnackbar('Virtual Machine stopped', { variant: 'success' });
-                  } catch (e) {
-                    console.error('start failed', e);
-                    enqueueSnackbar('Failed to stopp Virtual Machine', { variant: 'error' });
-                  }
+                  console.log('Stopping ' + item.getName());
+                  item
+                    .stop()
+                    .then(() =>
+                      enqueueSnackbar(t('Virtual Machine stopped'), { variant: 'success' })
+                    )
+                    .catch(e => {
+                      console.error('Stop failed', e);
+                      enqueueSnackbar(t('Failed to stop Virtual Machine'), { variant: 'error' });
+                    });
                 }}
-              ></ActionButton>
+              />
             ),
-          },
-          {
+          });
+        }
+
+        if (isRunning) {
+          actionsList.push({
+            id: 'pause',
+            action: (
+              <ActionButton
+                description={t('Pause')}
+                icon="mdi:pause"
+                onClick={() => {
+                  console.log('Pausing ' + item.getName());
+                  item
+                    .pause()
+                    .then(() =>
+                      enqueueSnackbar(t('Virtual Machine paused'), { variant: 'success' })
+                    )
+                    .catch(e => {
+                      console.error('Pause failed', e);
+                      const errorMessage = e.message
+                        ? `${t('Failed to pause Virtual Machine')}: ${e.message}`
+                        : t('Failed to pause Virtual Machine');
+                      enqueueSnackbar(errorMessage, { variant: 'error' });
+                    });
+                }}
+              />
+            ),
+          });
+        }
+
+        if (isPaused) {
+          actionsList.push({
+            id: 'unpause',
+            action: (
+              <ActionButton
+                description={t('Unpause')}
+                icon="mdi:play-pause"
+                onClick={() => {
+                  console.log('Unpausing ' + item.getName());
+                  item
+                    .unpause()
+                    .then(() =>
+                      enqueueSnackbar(t('Virtual Machine unpaused'), { variant: 'success' })
+                    )
+                    .catch(e => {
+                      console.error('Unpause failed', e);
+                      enqueueSnackbar(t('Failed to unpause Virtual Machine'), { variant: 'error' });
+                    });
+                }}
+              />
+            ),
+          });
+        }
+
+        if (isRunning || isPaused) {
+          actionsList.push({
             id: 'console',
             action: (
               <Resource.AuthVisible item={item} authVerb="get" subresource="exec">
@@ -150,9 +218,11 @@ export default function VirtualMachineDetails(props: VirtualMachineDetailsProps)
                 />
               </Resource.AuthVisible>
             ),
-          },
-        ]
-      }
+          });
+        }
+
+        return actionsList;
+      }}
     />
   );
 }
