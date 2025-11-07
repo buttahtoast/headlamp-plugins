@@ -39,6 +39,16 @@ class VirtualMachine extends KubeObject {
     return instance.exec(onExec, options);
   }
 
+  async pause() {
+    const instance = new VirtualMachineInstance(this.jsonData);
+    return instance.pause();
+  }
+
+  async unpause() {
+    const instance = new VirtualMachineInstance(this.jsonData);
+    return instance.unpause();
+  }
+
   static kind = 'VirtualMachine';
   static apiVersion = 'kubevirt.io/v1';
   static isNamespaced = true;
