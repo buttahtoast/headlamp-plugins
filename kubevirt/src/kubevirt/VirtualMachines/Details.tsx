@@ -97,7 +97,9 @@ export default function VirtualMachineDetails(props: VirtualMachineDetailsProps)
         if (!item) return [];
         const printableStatus = item.jsonData.status?.printableStatus || '';
         const conditions = item.jsonData.status?.conditions || [];
-        const isPaused = conditions.some(c => c.type === 'Paused' && c.status === 'True') || printableStatus === 'Paused';
+        const isPaused =
+          conditions.some(c => c.type === 'Paused' && c.status === 'True') ||
+          printableStatus === 'Paused';
         const isRunning = printableStatus === 'Running' && !isPaused;
 
         const actionsList = [];
@@ -111,8 +113,11 @@ export default function VirtualMachineDetails(props: VirtualMachineDetailsProps)
                 icon="mdi:play"
                 onClick={() => {
                   console.log('Starting ' + item.getName());
-                  item.start()
-                    .then(() => enqueueSnackbar(t('Virtual Machine started'), { variant: 'success' }))
+                  item
+                    .start()
+                    .then(() =>
+                      enqueueSnackbar(t('Virtual Machine started'), { variant: 'success' })
+                    )
                     .catch(e => {
                       console.error('Start failed', e);
                       enqueueSnackbar(t('Failed to start Virtual Machine'), { variant: 'error' });
@@ -132,8 +137,11 @@ export default function VirtualMachineDetails(props: VirtualMachineDetailsProps)
                 icon="mdi:stop"
                 onClick={() => {
                   console.log('Stopping ' + item.getName());
-                  item.stop()
-                    .then(() => enqueueSnackbar(t('Virtual Machine stopped'), { variant: 'success' }))
+                  item
+                    .stop()
+                    .then(() =>
+                      enqueueSnackbar(t('Virtual Machine stopped'), { variant: 'success' })
+                    )
                     .catch(e => {
                       console.error('Stop failed', e);
                       enqueueSnackbar(t('Failed to stop Virtual Machine'), { variant: 'error' });
@@ -153,11 +161,16 @@ export default function VirtualMachineDetails(props: VirtualMachineDetailsProps)
                 icon="mdi:pause"
                 onClick={() => {
                   console.log('Pausing ' + item.getName());
-                  item.pause()
-                    .then(() => enqueueSnackbar(t('Virtual Machine paused'), { variant: 'success' }))
+                  item
+                    .pause()
+                    .then(() =>
+                      enqueueSnackbar(t('Virtual Machine paused'), { variant: 'success' })
+                    )
                     .catch(e => {
                       console.error('Pause failed', e);
-                      const errorMessage = e.message ? `${t('Failed to pause Virtual Machine')}: ${e.message}` : t('Failed to pause Virtual Machine');
+                      const errorMessage = e.message
+                        ? `${t('Failed to pause Virtual Machine')}: ${e.message}`
+                        : t('Failed to pause Virtual Machine');
                       enqueueSnackbar(errorMessage, { variant: 'error' });
                     });
                 }}
@@ -175,8 +188,11 @@ export default function VirtualMachineDetails(props: VirtualMachineDetailsProps)
                 icon="mdi:play-pause"
                 onClick={() => {
                   console.log('Unpausing ' + item.getName());
-                  item.unpause()
-                    .then(() => enqueueSnackbar(t('Virtual Machine unpaused'), { variant: 'success' }))
+                  item
+                    .unpause()
+                    .then(() =>
+                      enqueueSnackbar(t('Virtual Machine unpaused'), { variant: 'success' })
+                    )
                     .catch(e => {
                       console.error('Unpause failed', e);
                       enqueueSnackbar(t('Failed to unpause Virtual Machine'), { variant: 'error' });
