@@ -1,0 +1,14 @@
+version: v0.1.0-beta1
+name: buttah_capsule
+displayName: Capsule
+createdAt: "2025-01-01T00:00:00Z"
+logoURL: "https://raw.githubusercontent.com/projectcapsule/capsule/581a8fe60e5a8a4c2861c32dd9854e1c2461777f/assets/logo/capsule.svg"
+description: "A plugin for Capsule."
+annotations:
+  headlamp/plugin/archive-url: "https://github.com/buttahtoast/headlamp-plugins/releases/download/capsule-plugin-0.1.0-beta1/capsule-plugin-0.1.0-beta1.tar.gz"
+  headlamp/plugin/archive-checksum: "SHA256:4acf319e9013eedbe4d7e712f2f815b76619df7740bb7e77f478708dc3fa8901"
+  headlamp/plugin/version-compat: ">=0.24"
+  headlamp/plugin/distro-compat: "in-cluster,web,docker-desktop,desktop"
+links:
+  - name: source
+    url: https://github.com/buttahtoast/headlamp-plugins/tree/main/capsule
