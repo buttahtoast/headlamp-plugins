@@ -20,7 +20,8 @@
     "kubernetes",
     "kubernetes-ui",
     "kubernetes-debugging",
-    "plugins"
+    "plugins",
+    "capsule"
   ],
   "prettier": "@headlamp-k8s/eslint-config/prettier-config",
   "eslintConfig": {
