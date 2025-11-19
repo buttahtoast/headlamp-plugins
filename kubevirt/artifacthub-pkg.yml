@@ -1,12 +1,12 @@
-version: v0.0.1-beta6
+version: v0.0.1-beta7
 name: buttah_kubevirt
 displayName: Kubevirt
 createdAt: "2025-01-01T00:00:00Z"
 logoURL: "https://github.com/kubevirt/community/blob/main/logo/KubeVirt_icon.png?raw=true"
 description: "A plugin for managing KubeVirt virtual machines within a Kubernetes cluster."
 annotations:
-  headlamp/plugin/archive-url: "https://github.com/buttahtoast/headlamp-plugins/releases/download/kubevirt-v0.0.1-beta6/kubevirt-v0.0.1-beta6.tar.gz"
-  headlamp/plugin/archive-checksum: "SHA256:e1b86413e36ce1fab49d8c72a01573967139dc6940429a49fedcfc8fcf45c0c5"
+  headlamp/plugin/archive-url: "https://github.com/buttahtoast/headlamp-plugins/releases/download/kubevirt-v0.0.1-beta7/kubevirt-v0.0.1-beta7.tar.gz"
+  headlamp/plugin/archive-checksum: "SHA256:1fae2668275be43308a1a5c56913d6d785f1be579daa273d1727449cd58d606a"
   headlamp/plugin/version-compat: ">=0.24"
   headlamp/plugin/distro-compat: "in-cluster,web,docker-desktop,desktop"
 links:
