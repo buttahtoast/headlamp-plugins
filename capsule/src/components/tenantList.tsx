@@ -16,7 +16,7 @@ export function TenantsList() {
               {item.getName()}
             </Link>
           ),
-          getValue: item => (item.status.state ? 'Active' : 'Not Active'),
+          getValue: item => (item.status?.state ? 'Active' : 'Not Active'),
         },
       ]}
     ></ResourceListView>
