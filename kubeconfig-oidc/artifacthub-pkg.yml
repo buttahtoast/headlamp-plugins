@@ -1,0 +1,14 @@
+version: v0.0.1-beta7
+name: headlamp_oidc_kubeconfig
+displayName: OIDC Kubeconfig
+createdAt: "2025-01-01T00:00:00Z"
+logoURL: "https://github.com/kubevirt/community/blob/main/logo/KubeVirt_icon.png?raw=true"
+description: "A plugin for downloading kubeconfig files with OIDC authentication within Headlamp."
+annotations:
+  headlamp/plugin/archive-url: "https://github.com/buttahtoast/headlamp-plugins/releases/download/kubevirt-v0.0.1-beta7/kubevirt-v0.0.1-beta7.tar.gz"
+  headlamp/plugin/archive-checksum: "SHA256:1fae2668275be43308a1a5c56913d6d785f1be579daa273d1727449cd58d606a"
+  headlamp/plugin/version-compat: ">=0.24"
+  headlamp/plugin/distro-compat: "in-cluster"
+links:
+  - name: source
+    url: https://github.com/buttahtoast/headlamp-plugins/tree/main/kubeconfig-oidc

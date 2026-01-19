@@ -1,0 +1,9 @@
+{
+  "server": "https://my-api.example.com:6443",
+  "insecureSkipTLSVerify": false,
+  "caCert": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n",
+  "clusterName": "prod",
+  "userName": "oidc-user",
+  "contextName": "prod-context",
+  "namespace": "default"
+}
