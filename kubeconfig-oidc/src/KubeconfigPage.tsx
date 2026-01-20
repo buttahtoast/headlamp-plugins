@@ -8,7 +8,7 @@ import { getToken } from '@kinvolk/headlamp-plugin/lib/util/auth';
 import { buildKubeconfigYAML } from './kubeconfig';
 import { loadRuntimeDefaults, RuntimeDefaults } from './config';
 
-const PLUGIN_ID = 'headlamp-kubeconfig-oidc';
+const PLUGIN_ID = 'kubeconfig-oidc';
 
 type SettingsData = RuntimeDefaults;
 
