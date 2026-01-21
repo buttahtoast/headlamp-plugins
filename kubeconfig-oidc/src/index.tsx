@@ -6,7 +6,7 @@ import * as ReactRouter from 'react-router-dom';
 
 import { KubeconfigPage } from './KubeconfigPage';
 
-export const PLUGIN_ID = 'headlamp-kubeconfig-oidc';
+export const PLUGIN_ID = 'kubeconfig-oidc';
 export const KUBECONFIG_ROUTE_PATH = '/kubeconfig-oidc';
 
 function useNavigateCompat(): (path: string) => void {
