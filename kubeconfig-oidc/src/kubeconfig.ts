@@ -5,12 +5,8 @@ export type KubeconfigInput = {
   namespace?: string;
 
   server: string;
-
-  // If true, uses insecure-skip-tls-verify instead of CA data
   insecureSkipTLSVerify: boolean;
-
-  // Either PEM ("-----BEGIN CERTIFICATE-----") or base64 CA data
-  caCert?: string;
+  caCert?: string; // PEM or base64
 
   token: string;
 };
@@ -25,65 +21,51 @@ function normalizeCaData(caCert?: string): string | undefined {
   if (!trimmed) return undefined;
 
   if (isProbablyPemCert(trimmed)) {
-    // Convert PEM to base64 (kubeconfig expects base64 for *-data fields)
-    const pemBody = trimmed
+    // PEM contains base64 body inside; strip header/footer/whitespace.
+    return trimmed
       .replace(/-----BEGIN CERTIFICATE-----/g, '')
       .replace(/-----END CERTIFICATE-----/g, '')
       .replace(/\s+/g, '');
-    // pemBody is already base64 content inside PEM
-    return pemBody;
   }
 
-  // Assume already base64 CA data
+  // assume already base64
   return trimmed.replace(/\s+/g, '');
 }
 
 export function buildKubeconfigYAML(input: KubeconfigInput): string {
-  const {
-    clusterName,
-    userName,
-    contextName,
-    namespace,
-    server,
-    insecureSkipTLSVerify,
-    caCert,
-    token,
-  } = input;
+  const caData = normalizeCaData(input.caCert);
 
-  const caData = normalizeCaData(caCert);
-
-  // Minimal YAML emitter (safe for this structure)
   const indent = (n: number) => ' '.repeat(n);
-
   const lines: string[] = [];
+
   lines.push('apiVersion: v1');
   lines.push('kind: Config');
-  lines.push('clusters:');
-  lines.push(`${indent(2)}- name: ${clusterName}`);
-  lines.push(`${indent(4)}cluster:`);
-  lines.push(`${indent(6)}server: ${server}`);
 
-  if (insecureSkipTLSVerify) {
+  lines.push('clusters:');
+  lines.push(`${indent(2)}- name: ${input.clusterName}`);
+  lines.push(`${indent(4)}cluster:`);
+  lines.push(`${indent(6)}server: ${input.server}`);
+  if (input.insecureSkipTLSVerify) {
     lines.push(`${indent(6)}insecure-skip-tls-verify: true`);
   } else if (caData) {
     lines.push(`${indent(6)}certificate-authority-data: ${caData}`);
   }
 
   lines.push('users:');
-  lines.push(`${indent(2)}- name: ${userName}`);
+  lines.push(`${indent(2)}- name: ${input.userName}`);
   lines.push(`${indent(4)}user:`);
-  lines.push(`${indent(6)}token: ${token}`);
+  lines.push(`${indent(6)}token: ${input.token}`);
 
   lines.push('contexts:');
-  lines.push(`${indent(2)}- name: ${contextName}`);
+  lines.push(`${indent(2)}- name: ${input.contextName}`);
   lines.push(`${indent(4)}context:`);
-  lines.push(`${indent(6)}cluster: ${clusterName}`);
-  lines.push(`${indent(6)}user: ${userName}`);
-  if (namespace?.trim()) {
-    lines.push(`${indent(6)}namespace: ${namespace.trim()}`);
+  lines.push(`${indent(6)}cluster: ${input.clusterName}`);
+  lines.push(`${indent(6)}user: ${input.userName}`);
+  if (input.namespace?.trim()) {
+    lines.push(`${indent(6)}namespace: ${input.namespace.trim()}`);
   }
 
-  lines.push(`current-context: ${contextName}`);
+  lines.push(`current-context: ${input.contextName}`);
 
   return lines.join('\n') + '\n';
 }

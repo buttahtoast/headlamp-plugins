@@ -1,32 +1,55 @@
-/*
- * Copyright 2025 The Kubernetes Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+import React from 'react';
+import { registerAppBarAction, registerRoute, registerSidebarEntry } from '@kinvolk/headlamp-plugin/lib';
+import { Tooltip, IconButton } from '@mui/material';
+import { Icon } from '@iconify/react';
+import * as ReactRouter from 'react-router-dom';
 
-import { registerAppBarAction } from '@kinvolk/headlamp-plugin/lib';
+import { KubeconfigPage } from './KubeconfigPage';
 
-// Below are some imports you may want to use.
-//   See README.md for links to plugin development documentation.
-// import { Headlamp, K8s, useTranslation } from '@kinvolk/headlamp-plugin/lib';
-// import { SectionBox } from '@kinvolk/headlamp-plugin/lib/CommonComponents';
-// import { K8s } from '@kinvolk/headlamp-plugin/lib/K8s';
-// import { Typography } from '@mui/material';
+export const PLUGIN_ID = 'headlamp-kubeconfig-oidc';
+export const KUBECONFIG_ROUTE_PATH = '/kubeconfig-oidc';
 
-registerAppBarAction(<span>Hello</span>);
+function useNavigateCompat(): (path: string) => void {
+  const anyRouter = ReactRouter as any;
 
-// Example of using i18n (internationalization):
-// function MyComponent() {
-//   const { t } = useTranslation();
-//   return <div>{t('translation_key')}</div>;
-// }
+  if (typeof anyRouter.useNavigate === 'function') {
+    const navigate = anyRouter.useNavigate();
+    return (path: string) => navigate(path);
+  }
+
+  if (typeof anyRouter.useHistory === 'function') {
+    const history = anyRouter.useHistory();
+    return (path: string) => history.push(path);
+  }
+
+  return (path: string) => {
+    window.location.href = path;
+  };
+}
+
+function KubeconfigAppBarButton() {
+  const go = useNavigateCompat();
+
+  return (
+    <Tooltip title="Kubeconfig (OIDC)">
+      <IconButton aria-label="kubeconfig-oidc" size="large" onClick={() => go(KUBECONFIG_ROUTE_PATH)}>
+        <Icon icon="mdi:kubernetes" width="22" height="22" />
+      </IconButton>
+    </Tooltip>
+  );
+}
+
+registerRoute({
+  path: KUBECONFIG_ROUTE_PATH,
+  component: () => <KubeconfigPage />,
+});
+
+// Optional: also add it in the sidebar under Settings
+registerSidebarEntry({
+  parent: 'settings',
+  name: 'kubeconfig-oidc',
+  label: 'Kubeconfig',
+  url: KUBECONFIG_ROUTE_PATH,
+});
+
+registerAppBarAction(KubeconfigAppBarButton);
