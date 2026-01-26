@@ -1,6 +1,8 @@
 import { ApiProxy } from '@kinvolk/headlamp-plugin/lib';
 import { Link } from '@kinvolk/headlamp-plugin/lib/components/common';
 import {
+  Alert,
+  AlertTitle,
   Box,
   Button,
   Chip,
@@ -13,7 +15,8 @@ import {
 } from '@mui/material';
 import { Icon } from '@iconify/react';
 import { useSnackbar } from 'notistack';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useHistory } from 'react-router-dom';
 import LiveMigrationDialog from '../components/LiveMigrationDialog';
 import { ResourceList, ResourceListColumn } from '../components/ResourceList';
 import { useKubeVirtInstalled, KubeVirtNotInstalled, KubeVirtCheckLoading, formatBytes } from '../utils/kubeVirtCheck';
@@ -255,9 +258,18 @@ function VMISelectionToolbar({
 }
 
 export default function VirtualMachineInstanceList() {
+  const history = useHistory();
   const { enqueueSnackbar } = useSnackbar();
   const { installed: kubeVirtInstalled, checking: checkingKubeVirt } = useKubeVirtInstalled();
   const { items, error } = VirtualMachineInstance.useList({});
+
+  // Redirect to the unified VM List page
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      history.replace('/kubevirt/virtualmachines/');
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [history]);
 
   // Dialog states
   const [selectedVMI, setSelectedVMI] = useState<VirtualMachineInstance | null>(null);
@@ -616,6 +628,22 @@ export default function VirtualMachineInstanceList() {
 
   return (
     <>
+      <Alert
+        severity="info"
+        sx={{ mb: 2 }}
+        action={
+          <Button
+            color="inherit"
+            size="small"
+            onClick={() => history.replace('/kubevirt/virtualmachines/')}
+          >
+            Go Now
+          </Button>
+        }
+      >
+        <AlertTitle>Page Moved</AlertTitle>
+        VM Instances have been merged into the Virtual Machines page. You will be redirected automatically.
+      </Alert>
       <ResourceList<VirtualMachineInstance>
         title="Virtual Machine Instances"
         data={items}

@@ -35,7 +35,7 @@ import { useSnackbar } from 'notistack';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router-dom';
-import { CPUConfigurationGrid, MemoryGrid } from '../components/HardwareGrids';
+import { UsageBar } from '../components/HardwareGrids';
 import LiveMigrationDialog from '../components/LiveMigrationDialog';
 import NetworkInterfacesGrid from '../components/NetworkInterfacesGrid';
 import SchedulingAffinity from '../components/SchedulingAffinity';
@@ -712,7 +712,7 @@ export default function VirtualMachineDetails(props: VirtualMachineDetailsProps)
               value: (
                 <Box>
                   <Typography variant="body2">
-                    {hw.cpu.total} vCPU{hw.cpu.total > 1 ? 's' : ''}
+                    {hw.cpu.total} vCPU{hw.cpu.total > 1 ? 's' : ''} ({hw.cpu.model})
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
                     {hw.cpu.sockets} socket(s) × {hw.cpu.cores} core(s) × {hw.cpu.threads} thread(s)
@@ -724,12 +724,25 @@ export default function VirtualMachineDetails(props: VirtualMachineDetailsProps)
               name: t('Memory'),
               value: (
                 <Box>
-                  <Typography variant="body2">
-                    {formatBytes(hw.memory.allocated)}
-                  </Typography>
-                  {hw.memory.usedBytes && hw.memory.totalBytes && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Typography variant="body2">
+                      {formatBytes(hw.memory.allocated)}
+                    </Typography>
+                    {hw.memory.usedBytes !== undefined && hw.memory.totalBytes && (
+                      <UsageBar
+                        used={hw.memory.usedBytes}
+                        total={hw.memory.totalBytes}
+                        label={`${formatBytes(hw.memory.usedBytes)} used of ${formatBytes(hw.memory.totalBytes)}`}
+                      />
+                    )}
+                  </Box>
+                  {hw.memory.usedBytes !== undefined && hw.memory.totalBytes ? (
                     <Typography variant="caption" color="text.secondary">
                       {formatBytes(hw.memory.usedBytes)} used / {formatBytes(hw.memory.totalBytes)} total
+                    </Typography>
+                  ) : (
+                    <Typography variant="caption" color="text.secondary">
+                      Usage requires guest agent
                     </Typography>
                   )}
                 </Box>
@@ -743,45 +756,48 @@ export default function VirtualMachineDetails(props: VirtualMachineDetailsProps)
               name: t('Network'),
               value: `${hw.networks.length} interface(s)`,
             },
-            {
-              name: 'VirtualMachineInstance',
-              value: (
-                <Link
-                  routeName="virtualmachineinstance"
-                  params={{ name: item.getName(), namespace: item.getNamespace() }}
-                >
-                  {item.getName()}
-                </Link>
-              ),
-            },
-            {
-              name: 'Pod',
-              value:
-                podName && podName !== 'Unknown' ? (
+            // Only show VMI-related info when VM is running and VMI exists
+            ...(vmiStatus ? [
+              {
+                name: 'VirtualMachineInstance',
+                value: (
                   <Link
-                    routeName="pod"
-                    params={{
-                      name: podName,
-                      namespace: item.getNamespace(),
-                    }}
+                    routeName="virtualmachineinstance"
+                    params={{ name: item.getName(), namespace: item.getNamespace() }}
                   >
-                    {podName}
+                    {item.getName()}
                   </Link>
-                ) : (
-                  'Unknown'
                 ),
-            },
-            {
-              name: 'Node',
-              value:
-                nodeName && nodeName !== 'Unknown' ? (
-                  <Link routeName="node" params={{ name: nodeName }}>
-                    {nodeName}
-                  </Link>
-                ) : (
-                  'Unknown'
-                ),
-            },
+              },
+              {
+                name: 'Pod',
+                value:
+                  podName && podName !== 'Unknown' ? (
+                    <Link
+                      routeName="pod"
+                      params={{
+                        name: podName,
+                        namespace: item.getNamespace(),
+                      }}
+                    >
+                      {podName}
+                    </Link>
+                  ) : (
+                    <Typography variant="caption" color="text.secondary">-</Typography>
+                  ),
+              },
+              {
+                name: 'Node',
+                value:
+                  nodeName && nodeName !== 'Unknown' ? (
+                    <Link routeName="node" params={{ name: nodeName }}>
+                      {nodeName}
+                    </Link>
+                  ) : (
+                    <Typography variant="caption" color="text.secondary">-</Typography>
+                  ),
+              },
+            ] : []),
           ];
         }}
         extraSections={item => {
@@ -791,29 +807,18 @@ export default function VirtualMachineDetails(props: VirtualMachineDetailsProps)
 
           return [
             {
-              id: 'hardware',
+              id: 'network',
               section: (
-                <SectionBox title={t('Hardware Configuration')}>
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                    {/* CPU Section */}
-                    <CPUConfigurationGrid cpu={hw.cpu} />
-
-                    {/* Memory Section */}
-                    <MemoryGrid memory={hw.memory} />
-
-                    {/* Network Section */}
-                    <NetworkInterfacesGrid
-                      interfaces={hw.networks}
-                      namespace={item.getNamespace()}
-                      onSshClick={(ip, isPodNetwork) => {
-                        setSshTargetIp(ip);
-                        setSshIsPodNetwork(isPodNetwork);
-                        setSshDefaultTab('ssh');
-                        setShowSshTerminal(true);
-                      }}
-                    />
-                  </Box>
-                </SectionBox>
+                <NetworkInterfacesGrid
+                  interfaces={hw.networks}
+                  namespace={item.getNamespace()}
+                  onSshClick={(ip, isPodNetwork) => {
+                    setSshTargetIp(ip);
+                    setSshIsPodNetwork(isPodNetwork);
+                    setSshDefaultTab('ssh');
+                    setShowSshTerminal(true);
+                  }}
+                />
               ),
             },
             {
@@ -826,6 +831,7 @@ export default function VirtualMachineDetails(props: VirtualMachineDetailsProps)
                     vm={item}
                     namespace={item.getNamespace()}
                     isRunning={isRunning}
+                    filesystemInfo={filesystemInfo}
                   />
                 );
               })(),

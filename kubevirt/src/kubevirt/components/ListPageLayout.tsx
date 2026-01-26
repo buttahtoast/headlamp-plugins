@@ -1,4 +1,5 @@
 import { CommonComponents } from '@kinvolk/headlamp-plugin/lib';
+import { SectionBox } from '@kinvolk/headlamp-plugin/lib/components/common';
 import {
   Box,
   Button,

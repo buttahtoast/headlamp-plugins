@@ -1,4 +1,6 @@
 import { registerRoute, registerSidebarEntry } from '@kinvolk/headlamp-plugin/lib';
+import { useEffect } from 'react';
+import { useHistory, useParams } from 'react-router-dom';
 import Dashboard from './kubevirt/Dashboard/Dashboard';
 import DataVolumeDetail from './kubevirt/DataVolume/Details';
 import DataVolumeList from './kubevirt/DataVolume/List';
@@ -10,12 +12,21 @@ import VirtualMachineClusterInstancetypeDetail from './kubevirt/VirtualMachineCl
 import VirtualMachineClusterInstancetypeList from './kubevirt/VirtualMachineClusterInstancetype/List';
 import VirtualMachineClusterPreferenceDetail from './kubevirt/VirtualMachineClusterPreference/Details';
 import VirtualMachineClusterPreferenceList from './kubevirt/VirtualMachineClusterPreference/List';
-import VirtualMachineInstanceDetail from './kubevirt/VirtualMachineInstance/Details';
 import VirtualMachineInstanceList from './kubevirt/VirtualMachineInstance/List';
 import VirtualMachineInstanceMigrationDetail from './kubevirt/VirtualMachineInstanceMigration/Details';
 import VirtualMachineInstanceMigrationList from './kubevirt/VirtualMachineInstanceMigration/List';
 import VirtualMachineDetail from './kubevirt/VirtualMachines/Details';
 import VirtualMachineList from './kubevirt/VirtualMachines/List';
+
+// Redirect component for VMI details -> VM details
+function VMIDetailsRedirect() {
+  const history = useHistory();
+  const params = useParams<{ namespace: string; name: string }>();
+  useEffect(() => {
+    history.replace(`/kubevirt/virtualmachines/${params.namespace}/${params.name}`);
+  }, [history, params.namespace, params.name]);
+  return null;
+}
 import VirtualMachineSnapshotDetail from './kubevirt/VirtualMachineSnapshot/Details';
 import VirtualMachineSnapshotList from './kubevirt/VirtualMachineSnapshot/List';
 
@@ -56,15 +67,6 @@ registerSidebarEntry({
   label: 'Virtual Machines',
   icon: 'codicon:vm',
   url: '/kubevirt/virtualmachines/',
-});
-
-// VM Instances
-registerSidebarEntry({
-  parent: 'kubevirt',
-  name: 'virtualmachineinstances',
-  label: 'VM Instances',
-  icon: 'mdi:server',
-  url: '/kubevirt/virtualmachineinstances/',
 });
 
 // Migrations
@@ -261,11 +263,11 @@ registerRoute({
   params: ['namespace', 'name'],
 });
 
-// Virtual Machine Instance routes
+// Virtual Machine Instance routes (kept for backwards compatibility, points to VM sidebar)
 registerRoute({
   path: '/kubevirt/virtualmachineinstances/',
   parent: 'kubevirt',
-  sidebar: 'virtualmachineinstances',
+  sidebar: 'virtualmachines',
   component: () => <VirtualMachineInstanceList />,
   exact: true,
   name: 'virtualmachineinstances',
@@ -274,8 +276,8 @@ registerRoute({
 registerRoute({
   path: '/kubevirt/virtualmachineinstances/:namespace/:name',
   parent: 'kubevirt',
-  sidebar: 'virtualmachineinstances',
-  component: () => <VirtualMachineInstanceDetail />,
+  sidebar: 'virtualmachines',
+  component: () => <VMIDetailsRedirect />,
   exact: true,
   name: 'virtualmachineinstance',
   params: ['namespace', 'name'],

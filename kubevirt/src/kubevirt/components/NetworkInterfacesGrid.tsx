@@ -1,4 +1,4 @@
-import { Link } from '@kinvolk/headlamp-plugin/lib/CommonComponents';
+import { Link, SectionBox } from '@kinvolk/headlamp-plugin/lib/components/common';
 import { Icon } from '@iconify/react';
 import {
   Box,
@@ -14,6 +14,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import { useTranslation } from 'react-i18next';
 
 export interface NetworkInterface {
   name: string;
@@ -48,6 +49,8 @@ export default function NetworkInterfacesGrid({
   namespace,
   onSshClick,
 }: NetworkInterfacesGridProps) {
+  const { t } = useTranslation('glossary');
+
   const isLoopbackIPv4 = (ip: string): boolean => {
     return ip.startsWith('127.');
   };
@@ -57,10 +60,7 @@ export default function NetworkInterfacesGrid({
   };
 
   return (
-    <Box>
-      <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }} gutterBottom>
-        Network Interfaces ({interfaces.length})
-      </Typography>
+    <SectionBox title={t('Network Interfaces')}>
       <TableContainer component={Paper} variant="outlined">
         <Table size="medium">
           <TableHead>
@@ -187,6 +187,6 @@ export default function NetworkInterfacesGrid({
           </TableBody>
         </Table>
       </TableContainer>
-    </Box>
+    </SectionBox>
   );
 }
