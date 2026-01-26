@@ -10,9 +10,97 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import SshConsole from '../SshConsole/SshConsole';
+import VncConsole from '../VncConsole/VncConsole';
 import VirtualMachineInstance from '../VirtualMachineInstance/VirtualMachineInstance';
 import VirtualMachine from './VirtualMachine';
+
+// OS icon mapping based on guest OS info
+function getOSIcon(osName: string): { icon: string; color: string } {
+  const lowerName = osName.toLowerCase();
+
+  // Windows
+  if (lowerName.includes('windows') || lowerName.includes('win32') || lowerName.includes('win64')) {
+    return { icon: 'mdi:microsoft-windows', color: '#0078D4' };
+  }
+
+  // Red Hat family
+  if (lowerName.includes('rhel') || lowerName.includes('red hat')) {
+    return { icon: 'mdi:redhat', color: '#EE0000' };
+  }
+  if (lowerName.includes('fedora')) {
+    return { icon: 'mdi:fedora', color: '#51A2DA' };
+  }
+  if (lowerName.includes('centos')) {
+    return { icon: 'mdi:centos', color: '#262577' };
+  }
+  if (lowerName.includes('rocky')) {
+    return { icon: 'mdi:linux', color: '#10B981' };
+  }
+  if (lowerName.includes('alma')) {
+    return { icon: 'mdi:linux', color: '#0F4266' };
+  }
+
+  // Debian family
+  if (lowerName.includes('ubuntu')) {
+    return { icon: 'mdi:ubuntu', color: '#E95420' };
+  }
+  if (lowerName.includes('debian')) {
+    return { icon: 'mdi:debian', color: '#A81D33' };
+  }
+  if (lowerName.includes('mint')) {
+    return { icon: 'mdi:linux-mint', color: '#87CF3E' };
+  }
+
+  // SUSE family
+  if (lowerName.includes('suse') || lowerName.includes('sles')) {
+    return { icon: 'mdi:suse', color: '#73BA25' };
+  }
+
+  // Arch family
+  if (lowerName.includes('arch')) {
+    return { icon: 'mdi:arch', color: '#1793D1' };
+  }
+  if (lowerName.includes('manjaro')) {
+    return { icon: 'mdi:manjaro', color: '#35BF5C' };
+  }
+
+  // Other Linux
+  if (lowerName.includes('gentoo')) {
+    return { icon: 'mdi:gentoo', color: '#54487A' };
+  }
+  if (lowerName.includes('alpine')) {
+    return { icon: 'mdi:linux', color: '#0D597F' };
+  }
+  if (lowerName.includes('flatcar') || lowerName.includes('coreos')) {
+    return { icon: 'mdi:linux', color: '#F1606D' };
+  }
+
+  // BSD family
+  if (lowerName.includes('freebsd')) {
+    return { icon: 'mdi:freebsd', color: '#AB2B28' };
+  }
+  if (lowerName.includes('openbsd')) {
+    return { icon: 'mdi:openbsd', color: '#F2CA30' };
+  }
+  if (lowerName.includes('netbsd')) {
+    return { icon: 'mdi:linux', color: '#FF6600' };
+  }
+
+  // macOS
+  if (lowerName.includes('macos') || lowerName.includes('darwin') || lowerName.includes('mac os')) {
+    return { icon: 'mdi:apple', color: '#A2AAAD' };
+  }
+
+  // Generic Linux
+  if (lowerName.includes('linux')) {
+    return { icon: 'mdi:linux', color: '#FCC624' };
+  }
+
+  // Unknown
+  return { icon: 'mdi:help-circle-outline', color: '#9E9E9E' };
+}
 
 export interface VirtualMachineListProps {
   virtualMachine: VirtualMachine[] | null;
@@ -113,8 +201,12 @@ function getOSInfo(vmi: VirtualMachineInstance | undefined): { name: string; ver
 
 export function VirtualMachineListRenderer(props: VirtualMachineListProps) {
   const { virtualMachine, vmiMap, error, hideColumns = [], noNamespaceFilter } = props;
+  const [selectedVM, setSelectedVM] = useState<{ vm: VirtualMachine; vmi: VirtualMachineInstance | undefined } | null>(null);
+  const [vncOpen, setVncOpen] = useState(false);
+  const [sshOpen, setSshOpen] = useState(false);
 
   return (
+    <>
     <Resource.ResourceListView
         title={'Virtual Machines'}
         headerProps={{
@@ -126,6 +218,7 @@ export function VirtualMachineListRenderer(props: VirtualMachineListProps) {
           {
             id: 'name',
             label: 'Name',
+            gridTemplate: '1.5fr',
             getValue: vm => vm.getName(),
             render: vm => (
               <Link
@@ -164,6 +257,7 @@ export function VirtualMachineListRenderer(props: VirtualMachineListProps) {
           {
             id: 'status',
             label: 'Status',
+            gridTemplate: '0.7fr',
             getValue: vm => vm.status?.printableStatus || 'Unknown',
             render: vm => {
               const status = vm.status?.printableStatus || 'Unknown';
@@ -219,7 +313,8 @@ export function VirtualMachineListRenderer(props: VirtualMachineListProps) {
           },
           {
             id: 'os',
-            label: 'Operating System',
+            label: 'OS',
+            gridTemplate: '0.4fr',
             getValue: vm => {
               const vmiKey = `${vm.getNamespace()}/${vm.getName()}`;
               const vmi = vmiMap.get(vmiKey);
@@ -232,19 +327,21 @@ export function VirtualMachineListRenderer(props: VirtualMachineListProps) {
               if (!osInfo.name) {
                 return <Typography variant="caption" color="text.secondary">-</Typography>;
               }
+              const osIcon = getOSIcon(osInfo.full);
               return (
                 <Tooltip title={osInfo.full}>
-                  <Typography
-                    variant="body2"
-                    sx={{
-                      maxWidth: 250,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {osInfo.name}
-                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                    <ActionButton
+                      description={osInfo.full}
+                      icon={osIcon.icon}
+                      iconButtonProps={{
+                        size: 'small',
+                        disableRipple: true,
+                        sx: { color: osIcon.color, cursor: 'default', '&:hover': { backgroundColor: 'transparent' } },
+                      }}
+                      onClick={() => {}}
+                    />
+                  </Box>
                 </Tooltip>
               );
             },
@@ -253,6 +350,7 @@ export function VirtualMachineListRenderer(props: VirtualMachineListProps) {
             id: 'cpu',
             label: 'CPU',
             gridTemplate: '0.5fr',
+            show: false, // Hidden by default
             getValue: vm => {
               const domain = vm.jsonData?.spec?.template?.spec?.domain;
               const cores = domain?.cpu?.cores || 1;
@@ -273,6 +371,7 @@ export function VirtualMachineListRenderer(props: VirtualMachineListProps) {
             id: 'memory',
             label: 'Mem',
             gridTemplate: '0.5fr',
+            show: false, // Hidden by default
             getValue: vm => {
               const domain = vm.jsonData?.spec?.template?.spec?.domain;
               return domain?.resources?.requests?.memory ||
@@ -290,13 +389,49 @@ export function VirtualMachineListRenderer(props: VirtualMachineListProps) {
             },
           },
           {
-            id: 'actions',
-            label: 'Actions',
+            id: 'connect',
+            label: 'Connect',
+            gridTemplate: '0.5fr',
+            getValue: () => '',
+            render: vm => {
+              const status = vm.status?.printableStatus || 'Unknown';
+              const isRunning = status === 'Running';
+              const vmiKey = `${vm.getNamespace()}/${vm.getName()}`;
+              const vmi = vmiMap.get(vmiKey);
+              if (!isRunning || !vmi) {
+                return <Typography variant="caption" color="text.secondary">-</Typography>;
+              }
+              return (
+                <Box sx={{ display: 'flex', gap: 0.5 }}>
+                  <ActionButton
+                    description="VNC Console"
+                    icon="mdi:monitor"
+                    onClick={() => {
+                      setSelectedVM({ vm, vmi });
+                      setVncOpen(true);
+                    }}
+                  />
+                  <ActionButton
+                    description="SSH"
+                    icon="mdi:console-network"
+                    onClick={() => {
+                      setSelectedVM({ vm, vmi });
+                      setSshOpen(true);
+                    }}
+                  />
+                </Box>
+              );
+            },
+          },
+          {
+            id: 'vmControls',
+            label: 'Controls',
             getValue: () => '',
             render: vm => {
               const status = vm.status?.printableStatus || 'Unknown';
               const isRunning = status === 'Running';
               const isStopped = status === 'Stopped';
+              const isPaused = status === 'Paused';
               return (
                 <Box sx={{ display: 'flex', gap: 0.5 }}>
                   {isStopped && (
@@ -312,6 +447,7 @@ export function VirtualMachineListRenderer(props: VirtualMachineListProps) {
                         description="Stop VM"
                         icon="mdi:stop"
                         onClick={() => vm.stop()}
+                        iconButtonProps={{ sx: { color: '#E57373' } }}
                       />
                       <ActionButton
                         description="Restart VM"
@@ -323,9 +459,14 @@ export function VirtualMachineListRenderer(props: VirtualMachineListProps) {
                         icon="mdi:pause"
                         onClick={() => vm.pause()}
                       />
+                      <ActionButton
+                        description="Live Migrate"
+                        icon="mdi:swap-horizontal"
+                        onClick={() => vm.migrate()}
+                      />
                     </>
                   )}
-                  {status === 'Paused' && (
+                  {isPaused && (
                     <ActionButton
                       description="Unpause VM"
                       icon="mdi:play"
@@ -342,6 +483,29 @@ export function VirtualMachineListRenderer(props: VirtualMachineListProps) {
         reflectInURL
         id="headlamp-virtualmachines"
       />
+      {/* Console Dialogs */}
+      {selectedVM?.vmi && (
+        <>
+          <VncConsole
+            item={selectedVM.vmi}
+            open={vncOpen}
+            onClose={() => {
+              setVncOpen(false);
+              setSelectedVM(null);
+            }}
+          />
+          <SshConsole
+            item={selectedVM.vmi}
+            vmSpec={selectedVM.vm?.jsonData}
+            open={sshOpen}
+            onClose={() => {
+              setSshOpen(false);
+              setSelectedVM(null);
+            }}
+          />
+        </>
+      )}
+    </>
   );
 }
 

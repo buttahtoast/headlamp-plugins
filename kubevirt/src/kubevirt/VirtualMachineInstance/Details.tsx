@@ -18,6 +18,7 @@ import { useSnackbar } from 'notistack';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router-dom';
+import SshConsole from '../SshConsole/SshConsole';
 import Terminal from '../Terminal/Terminal';
 import VncConsole from '../VncConsole/VncConsole';
 import VirtualMachineInstance from './VirtualMachineInstance';
@@ -98,6 +99,7 @@ export default function VirtualMachineInstanceDetails(props: VirtualMachineInsta
   const { enqueueSnackbar } = useSnackbar();
   const [showTerminal, setShowTerminal] = useState(false);
   const [showVnc, setShowVnc] = useState(false);
+  const [showSsh, setShowSsh] = useState(false);
   const [vmiItem, setVmiItem] = useState<VirtualMachineInstance | null>(null);
 
   const [podName, setPodName] = useState<string | null>(null);
@@ -270,6 +272,13 @@ export default function VirtualMachineInstanceDetails(props: VirtualMachineInsta
           open
           item={vmiItem}
           onClose={() => setShowVnc(false)}
+        />
+      )}
+      {vmiItem && showSsh && (
+        <SshConsole
+          open
+          item={vmiItem}
+          onClose={() => setShowSsh(false)}
         />
       )}
       <Resource.DetailsGrid
@@ -514,15 +523,20 @@ export default function VirtualMachineInstanceDetails(props: VirtualMachineInsta
                                 <TableCell>{disk.bootOrder || '-'}</TableCell>
                                 <TableCell>
                                   {disk.volume?.dataVolume?.name ? (
-                                    <Link
-                                      routeName="datavolume"
-                                      params={{
-                                        name: disk.volume.dataVolume.name,
-                                        namespace: item.getNamespace(),
-                                      }}
-                                    >
-                                      {disk.volume.dataVolume.name}
-                                    </Link>
+                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                      <Link
+                                        routeName="datavolume"
+                                        params={{
+                                          name: disk.volume.dataVolume.name,
+                                          namespace: item.getNamespace(),
+                                        }}
+                                      >
+                                        {disk.volume.dataVolume.name}
+                                      </Link>
+                                      {disk.volume.dataVolume.hotpluggable && (
+                                        <Chip label="hotpluggable" size="small" variant="outlined" color="warning" />
+                                      )}
+                                    </Box>
                                   ) : disk.volume?.persistentVolumeClaim?.claimName ? (
                                     <Link
                                       routeName="persistentVolumeClaim"
@@ -539,8 +553,113 @@ export default function VirtualMachineInstanceDetails(props: VirtualMachineInsta
                                         {disk.volume.containerDisk.image}
                                       </Typography>
                                     </Tooltip>
-                                  ) : disk.volume?.cloudInitNoCloud || disk.volume?.cloudInitConfigDrive ? (
-                                    'cloud-init'
+                                  ) : disk.volume?.cloudInitConfigDrive ? (
+                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                      <Chip label="cloud-init (ConfigDrive)" size="small" variant="outlined" color="info" />
+                                      {disk.volume.cloudInitConfigDrive.secretRef?.name && (
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                          <Typography variant="caption" color="text.secondary">Secret:</Typography>
+                                          <Link
+                                            routeName="secret"
+                                            params={{
+                                              name: disk.volume.cloudInitConfigDrive.secretRef.name,
+                                              namespace: item.getNamespace(),
+                                            }}
+                                          >
+                                            {disk.volume.cloudInitConfigDrive.secretRef.name}
+                                          </Link>
+                                        </Box>
+                                      )}
+                                      {disk.volume.cloudInitConfigDrive.networkDataSecretRef?.name && (
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                          <Typography variant="caption" color="text.secondary">Network:</Typography>
+                                          <Link
+                                            routeName="secret"
+                                            params={{
+                                              name: disk.volume.cloudInitConfigDrive.networkDataSecretRef.name,
+                                              namespace: item.getNamespace(),
+                                            }}
+                                          >
+                                            {disk.volume.cloudInitConfigDrive.networkDataSecretRef.name}
+                                          </Link>
+                                        </Box>
+                                      )}
+                                    </Box>
+                                  ) : disk.volume?.cloudInitNoCloud ? (
+                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                      <Chip label="cloud-init (NoCloud)" size="small" variant="outlined" color="info" />
+                                      {disk.volume.cloudInitNoCloud.secretRef?.name && (
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                          <Typography variant="caption" color="text.secondary">Secret:</Typography>
+                                          <Link
+                                            routeName="secret"
+                                            params={{
+                                              name: disk.volume.cloudInitNoCloud.secretRef.name,
+                                              namespace: item.getNamespace(),
+                                            }}
+                                          >
+                                            {disk.volume.cloudInitNoCloud.secretRef.name}
+                                          </Link>
+                                        </Box>
+                                      )}
+                                      {disk.volume.cloudInitNoCloud.networkDataSecretRef?.name && (
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                          <Typography variant="caption" color="text.secondary">Network:</Typography>
+                                          <Link
+                                            routeName="secret"
+                                            params={{
+                                              name: disk.volume.cloudInitNoCloud.networkDataSecretRef.name,
+                                              namespace: item.getNamespace(),
+                                            }}
+                                          >
+                                            {disk.volume.cloudInitNoCloud.networkDataSecretRef.name}
+                                          </Link>
+                                        </Box>
+                                      )}
+                                    </Box>
+                                  ) : disk.volume?.configMap?.name ? (
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                      <Chip label="ConfigMap" size="small" variant="outlined" />
+                                      <Link
+                                        routeName="configmap"
+                                        params={{
+                                          name: disk.volume.configMap.name,
+                                          namespace: item.getNamespace(),
+                                        }}
+                                      >
+                                        {disk.volume.configMap.name}
+                                      </Link>
+                                    </Box>
+                                  ) : disk.volume?.secret?.secretName ? (
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                      <Chip label="Secret" size="small" variant="outlined" />
+                                      <Link
+                                        routeName="secret"
+                                        params={{
+                                          name: disk.volume.secret.secretName,
+                                          namespace: item.getNamespace(),
+                                        }}
+                                      >
+                                        {disk.volume.secret.secretName}
+                                      </Link>
+                                    </Box>
+                                  ) : disk.volume?.serviceAccount?.serviceAccountName ? (
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                      <Chip label="ServiceAccount" size="small" variant="outlined" />
+                                      <Link
+                                        routeName="serviceaccount"
+                                        params={{
+                                          name: disk.volume.serviceAccount.serviceAccountName,
+                                          namespace: item.getNamespace(),
+                                        }}
+                                      >
+                                        {disk.volume.serviceAccount.serviceAccountName}
+                                      </Link>
+                                    </Box>
+                                  ) : disk.volume?.downwardAPI ? (
+                                    <Chip label="DownwardAPI" size="small" variant="outlined" />
+                                  ) : disk.volume?.emptyDisk ? (
+                                    <Chip label={`EmptyDisk (${disk.volume.emptyDisk.capacity || 'auto'})`} size="small" variant="outlined" />
                                   ) : (
                                     'unknown'
                                   )}
@@ -686,6 +805,145 @@ export default function VirtualMachineInstanceDetails(props: VirtualMachineInsta
               ),
             },
             {
+              id: 'accessCredentials',
+              section: (() => {
+                const accessCredentials = item.spec?.accessCredentials || [];
+
+                if (accessCredentials.length === 0) return null;
+
+                return (
+                  <SectionBox title={t('Access Credentials')}>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      {accessCredentials.map((cred: any, idx: number) => {
+                        // User Password Credential
+                        if (cred.userPassword) {
+                          const propagation = cred.userPassword.propagationMethod;
+                          const source = cred.userPassword.source;
+                          return (
+                            <Paper key={idx} variant="outlined" sx={{ p: 2 }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                                <Chip label="User Password" size="small" color="warning" />
+                              </Box>
+                              <TableContainer>
+                                <Table size="small">
+                                  <TableBody>
+                                    <TableRow>
+                                      <TableCell sx={{ fontWeight: 'bold', width: '30%' }}>Propagation Method</TableCell>
+                                      <TableCell>
+                                        {propagation?.qemuGuestAgent && (
+                                          <Chip label="QEMU Guest Agent" size="small" variant="outlined" color="info" />
+                                        )}
+                                        {propagation?.noCloud && (
+                                          <Chip label="NoCloud" size="small" variant="outlined" color="info" />
+                                        )}
+                                      </TableCell>
+                                    </TableRow>
+                                    <TableRow>
+                                      <TableCell sx={{ fontWeight: 'bold' }}>Secret</TableCell>
+                                      <TableCell>
+                                        {source?.secret?.secretName ? (
+                                          <Link
+                                            routeName="secret"
+                                            params={{
+                                              name: source.secret.secretName,
+                                              namespace: item.getNamespace(),
+                                            }}
+                                          >
+                                            {source.secret.secretName}
+                                          </Link>
+                                        ) : (
+                                          '-'
+                                        )}
+                                      </TableCell>
+                                    </TableRow>
+                                  </TableBody>
+                                </Table>
+                              </TableContainer>
+                            </Paper>
+                          );
+                        }
+
+                        // SSH Public Key Credential
+                        if (cred.sshPublicKey) {
+                          const propagation = cred.sshPublicKey.propagationMethod;
+                          const source = cred.sshPublicKey.source;
+                          const users = propagation?.qemuGuestAgent?.users || [];
+                          return (
+                            <Paper key={idx} variant="outlined" sx={{ p: 2 }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                                <Chip label="SSH Public Key" size="small" color="success" />
+                              </Box>
+                              <TableContainer>
+                                <Table size="small">
+                                  <TableBody>
+                                    <TableRow>
+                                      <TableCell sx={{ fontWeight: 'bold', width: '30%' }}>Propagation Method</TableCell>
+                                      <TableCell>
+                                        {propagation?.qemuGuestAgent && (
+                                          <Chip label="QEMU Guest Agent" size="small" variant="outlined" color="info" />
+                                        )}
+                                        {propagation?.noCloud && (
+                                          <Chip label="NoCloud" size="small" variant="outlined" color="info" />
+                                        )}
+                                        {propagation?.configDrive && (
+                                          <Chip label="Config Drive" size="small" variant="outlined" color="info" />
+                                        )}
+                                      </TableCell>
+                                    </TableRow>
+                                    {users.length > 0 && (
+                                      <TableRow>
+                                        <TableCell sx={{ fontWeight: 'bold' }}>Target Users</TableCell>
+                                        <TableCell>
+                                          <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                                            {users.map((user: string, userIdx: number) => (
+                                              <Chip
+                                                key={userIdx}
+                                                label={user}
+                                                size="small"
+                                                variant="outlined"
+                                              />
+                                            ))}
+                                          </Box>
+                                        </TableCell>
+                                      </TableRow>
+                                    )}
+                                    <TableRow>
+                                      <TableCell sx={{ fontWeight: 'bold' }}>Secret</TableCell>
+                                      <TableCell>
+                                        {source?.secret?.secretName ? (
+                                          <Link
+                                            routeName="secret"
+                                            params={{
+                                              name: source.secret.secretName,
+                                              namespace: item.getNamespace(),
+                                            }}
+                                          >
+                                            {source.secret.secretName}
+                                          </Link>
+                                        ) : (
+                                          '-'
+                                        )}
+                                      </TableCell>
+                                    </TableRow>
+                                  </TableBody>
+                                </Table>
+                              </TableContainer>
+                            </Paper>
+                          );
+                        }
+
+                        return null;
+                      })}
+                      <Typography variant="caption" color="text.secondary">
+                        Access credentials are injected into the VM via the specified propagation method.
+                        QEMU Guest Agent requires the guest agent to be running inside the VM.
+                      </Typography>
+                    </Box>
+                  </SectionBox>
+                );
+              })(),
+            },
+            {
               id: 'conditions',
               section: <Resource.ConditionsSection resource={item?.jsonData} />,
             },
@@ -770,6 +1028,17 @@ export default function VirtualMachineInstanceDetails(props: VirtualMachineInsta
                   description={t('VNC Console')}
                   icon="mdi:monitor"
                   onClick={() => setShowVnc(true)}
+                />
+              ),
+            });
+
+            actionsList.push({
+              id: 'ssh',
+              action: (
+                <ActionButton
+                  description={t('SSH Connection')}
+                  icon="mdi:console-network"
+                  onClick={() => setShowSsh(true)}
                 />
               ),
             });

@@ -454,27 +454,27 @@ export default function VncConsole(props: VncConsoleProps) {
           <Toolbar
             variant="dense"
             sx={{
-              minHeight: 36,
+              minHeight: 48,
               backgroundColor: 'background.paper',
               borderBottom: 1,
               borderColor: 'divider',
-              gap: 0.5,
+              gap: 1,
               flexWrap: 'wrap',
-              py: 0.5,
+              py: 1,
             }}
           >
             {/* Send Keys Group */}
             <Tooltip title="Ctrl+Alt+Delete">
-              <IconButton size="small" onClick={sendCtrlAltDel} disabled={viewOnly}>
-                <Typography variant="caption" sx={{ fontWeight: 'bold', fontSize: '0.65rem' }}>
+              <IconButton size="medium" onClick={sendCtrlAltDel} disabled={viewOnly}>
+                <Typography variant="body2" sx={{ fontWeight: 'bold', fontSize: '0.85rem' }}>
                   C-A-D
                 </Typography>
               </IconButton>
             </Tooltip>
 
             <Tooltip title="Send Keys">
-              <IconButton size="small" onClick={e => setSendKeysAnchor(e.currentTarget)} disabled={viewOnly}>
-                <Typography variant="caption" sx={{ fontWeight: 'bold', fontSize: '0.65rem' }}>
+              <IconButton size="medium" onClick={e => setSendKeysAnchor(e.currentTarget)} disabled={viewOnly}>
+                <Typography variant="body2" sx={{ fontWeight: 'bold', fontSize: '0.85rem' }}>
                   Keys▾
                 </Typography>
               </IconButton>
@@ -502,9 +502,9 @@ export default function VncConsole(props: VncConsoleProps) {
 
             {/* Virtual Keyboard */}
             <Tooltip title="Virtual Keyboard">
-              <IconButton size="small" onClick={e => setKeyboardAnchor(e.currentTarget)} disabled={viewOnly}>
-                <Typography variant="caption" sx={{ fontWeight: 'bold', fontSize: '0.65rem' }}>
-                  ⌨
+              <IconButton size="medium" onClick={e => setKeyboardAnchor(e.currentTarget)} disabled={viewOnly}>
+                <Typography variant="body2" sx={{ fontWeight: 'bold', fontSize: '1.5rem', lineHeight: 1 }}>
+                  ⌨️
                 </Typography>
               </IconButton>
             </Tooltip>
@@ -549,8 +549,8 @@ export default function VncConsole(props: VncConsoleProps) {
 
             {/* Clipboard Group */}
             <Tooltip title="Paste from clipboard">
-              <IconButton size="small" onClick={pasteFromSystemClipboard} disabled={viewOnly}>
-                <Typography variant="caption" sx={{ fontWeight: 'bold', fontSize: '0.65rem' }}>
+              <IconButton size="medium" onClick={pasteFromSystemClipboard} disabled={viewOnly}>
+                <Typography variant="body2" sx={{ fontWeight: 'bold', fontSize: '1.2rem' }}>
                   📋
                 </Typography>
               </IconButton>
@@ -563,15 +563,15 @@ export default function VncConsole(props: VncConsoleProps) {
               onChange={e => setClipboardText(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') sendClipboardText(); }}
               disabled={viewOnly}
-              sx={{ width: 140 }}
+              sx={{ width: 160 }}
               InputProps={{
-                sx: { height: 24, fontSize: '0.75rem' },
+                sx: { height: 32, fontSize: '0.875rem' },
               }}
             />
 
             <Tooltip title="Send text">
-              <IconButton size="small" onClick={sendClipboardText} disabled={!clipboardText || viewOnly}>
-                <Typography variant="caption" sx={{ fontWeight: 'bold', fontSize: '0.65rem' }}>
+              <IconButton size="medium" onClick={sendClipboardText} disabled={!clipboardText || viewOnly}>
+                <Typography variant="body2" sx={{ fontWeight: 'bold', fontSize: '1.2rem' }}>
                   ➤
                 </Typography>
               </IconButton>
@@ -581,40 +581,40 @@ export default function VncConsole(props: VncConsoleProps) {
 
             {/* View Controls */}
             <Tooltip title="Zoom Out">
-              <IconButton size="small" onClick={zoomOut}>
-                <Typography variant="caption" sx={{ fontWeight: 'bold', fontSize: '0.65rem' }}>
+              <IconButton size="medium" onClick={zoomOut}>
+                <Typography variant="body2" sx={{ fontWeight: 'bold', fontSize: '1.2rem' }}>
                   −
                 </Typography>
               </IconButton>
             </Tooltip>
 
             <Tooltip title="Reset Zoom">
-              <IconButton size="small" onClick={resetZoom}>
-                <Typography variant="caption" sx={{ fontWeight: 'bold', fontSize: '0.65rem' }}>
+              <IconButton size="medium" onClick={resetZoom}>
+                <Typography variant="body2" sx={{ fontWeight: 'bold', fontSize: '0.875rem' }}>
                   {zoomLevel}%
                 </Typography>
               </IconButton>
             </Tooltip>
 
             <Tooltip title="Zoom In">
-              <IconButton size="small" onClick={zoomIn}>
-                <Typography variant="caption" sx={{ fontWeight: 'bold', fontSize: '0.65rem' }}>
+              <IconButton size="medium" onClick={zoomIn}>
+                <Typography variant="body2" sx={{ fontWeight: 'bold', fontSize: '1.2rem' }}>
                   +
                 </Typography>
               </IconButton>
             </Tooltip>
 
             <Tooltip title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}>
-              <IconButton size="small" onClick={toggleFullscreen}>
-                <Typography variant="caption" sx={{ fontWeight: 'bold', fontSize: '0.65rem' }}>
+              <IconButton size="medium" onClick={toggleFullscreen}>
+                <Typography variant="body2" sx={{ fontWeight: 'bold', fontSize: '1.2rem' }}>
                   {isFullscreen ? '⊡' : '⛶'}
                 </Typography>
               </IconButton>
             </Tooltip>
 
             <Tooltip title="Screenshot">
-              <IconButton size="small" onClick={takeScreenshot}>
-                <Typography variant="caption" sx={{ fontWeight: 'bold', fontSize: '0.65rem' }}>
+              <IconButton size="medium" onClick={takeScreenshot}>
+                <Typography variant="body2" sx={{ fontWeight: 'bold', fontSize: '1.2rem' }}>
                   📷
                 </Typography>
               </IconButton>
@@ -624,8 +624,8 @@ export default function VncConsole(props: VncConsoleProps) {
 
             {/* Settings */}
             <Tooltip title="Settings">
-              <IconButton size="small" onClick={e => setSettingsAnchor(e.currentTarget)}>
-                <Typography variant="caption" sx={{ fontWeight: 'bold', fontSize: '0.65rem' }}>
+              <IconButton size="medium" onClick={e => setSettingsAnchor(e.currentTarget)}>
+                <Typography variant="body2" sx={{ fontWeight: 'bold', fontSize: '1.2rem' }}>
                   ⚙
                 </Typography>
               </IconButton>
@@ -688,11 +688,11 @@ export default function VncConsole(props: VncConsoleProps) {
             {/* Power Controls */}
             <Tooltip title="Power Controls">
               <IconButton
-                size="small"
+                size="medium"
                 onClick={e => setPowerAnchor(e.currentTarget)}
                 disabled={!!powerLoading}
               >
-                <Typography variant="caption" sx={{ fontWeight: 'bold', fontSize: '0.65rem' }}>
+                <Typography variant="body2" sx={{ fontWeight: 'bold', fontSize: '1.2rem' }}>
                   {powerLoading ? '⏳' : '⚡'}
                 </Typography>
               </IconButton>
@@ -745,16 +745,16 @@ export default function VncConsole(props: VncConsoleProps) {
 
             {/* Connection Controls */}
             <Tooltip title="Reconnect">
-              <IconButton size="small" onClick={handleReconnect}>
-                <Typography variant="caption" sx={{ fontWeight: 'bold', fontSize: '0.65rem' }}>
+              <IconButton size="medium" onClick={handleReconnect}>
+                <Typography variant="body2" sx={{ fontWeight: 'bold', fontSize: '1.2rem' }}>
                   🔄
                 </Typography>
               </IconButton>
             </Tooltip>
 
             <Tooltip title="Disconnect">
-              <IconButton size="small" onClick={handleManualDisconnect}>
-                <Typography variant="caption" sx={{ fontWeight: 'bold', fontSize: '0.65rem' }}>
+              <IconButton size="medium" onClick={handleManualDisconnect}>
+                <Typography variant="body2" sx={{ fontWeight: 'bold', fontSize: '1.2rem' }}>
                   ⏏
                 </Typography>
               </IconButton>
@@ -763,9 +763,9 @@ export default function VncConsole(props: VncConsoleProps) {
             <Box sx={{ flex: 1 }} />
 
             {/* Status indicator */}
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <Box sx={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: 'success.main' }} />
-              <Typography variant="caption" color="text.secondary">
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Box sx={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: 'success.main' }} />
+              <Typography variant="body2" color="text.secondary">
                 Connected
               </Typography>
             </Box>

@@ -12,7 +12,96 @@ import {
   Typography,
 } from '@mui/material';
 import { useSnackbar } from 'notistack';
+import { useState } from 'react';
+import SshConsole from '../SshConsole/SshConsole';
+import VncConsole from '../VncConsole/VncConsole';
 import VirtualMachineInstance from './VirtualMachineInstance';
+
+// OS icon mapping based on guest OS info
+function getOSIcon(osName: string): { icon: string; color: string } {
+  const lowerName = osName.toLowerCase();
+
+  // Windows
+  if (lowerName.includes('windows') || lowerName.includes('win32') || lowerName.includes('win64')) {
+    return { icon: 'mdi:microsoft-windows', color: '#0078D4' };
+  }
+
+  // Red Hat family
+  if (lowerName.includes('rhel') || lowerName.includes('red hat')) {
+    return { icon: 'mdi:redhat', color: '#EE0000' };
+  }
+  if (lowerName.includes('fedora')) {
+    return { icon: 'mdi:fedora', color: '#51A2DA' };
+  }
+  if (lowerName.includes('centos')) {
+    return { icon: 'mdi:centos', color: '#262577' };
+  }
+  if (lowerName.includes('rocky')) {
+    return { icon: 'mdi:linux', color: '#10B981' };
+  }
+  if (lowerName.includes('alma')) {
+    return { icon: 'mdi:linux', color: '#0F4266' };
+  }
+
+  // Debian family
+  if (lowerName.includes('ubuntu')) {
+    return { icon: 'mdi:ubuntu', color: '#E95420' };
+  }
+  if (lowerName.includes('debian')) {
+    return { icon: 'mdi:debian', color: '#A81D33' };
+  }
+  if (lowerName.includes('mint')) {
+    return { icon: 'mdi:linux-mint', color: '#87CF3E' };
+  }
+
+  // SUSE family
+  if (lowerName.includes('suse') || lowerName.includes('sles')) {
+    return { icon: 'mdi:suse', color: '#73BA25' };
+  }
+
+  // Arch family
+  if (lowerName.includes('arch')) {
+    return { icon: 'mdi:arch', color: '#1793D1' };
+  }
+  if (lowerName.includes('manjaro')) {
+    return { icon: 'mdi:manjaro', color: '#35BF5C' };
+  }
+
+  // Other Linux
+  if (lowerName.includes('gentoo')) {
+    return { icon: 'mdi:gentoo', color: '#54487A' };
+  }
+  if (lowerName.includes('alpine')) {
+    return { icon: 'mdi:linux', color: '#0D597F' };
+  }
+  if (lowerName.includes('flatcar') || lowerName.includes('coreos')) {
+    return { icon: 'mdi:linux', color: '#F1606D' };
+  }
+
+  // BSD family
+  if (lowerName.includes('freebsd')) {
+    return { icon: 'mdi:freebsd', color: '#AB2B28' };
+  }
+  if (lowerName.includes('openbsd')) {
+    return { icon: 'mdi:openbsd', color: '#F2CA30' };
+  }
+  if (lowerName.includes('netbsd')) {
+    return { icon: 'mdi:linux', color: '#FF6600' };
+  }
+
+  // macOS
+  if (lowerName.includes('macos') || lowerName.includes('darwin') || lowerName.includes('mac os')) {
+    return { icon: 'mdi:apple', color: '#A2AAAD' };
+  }
+
+  // Generic Linux
+  if (lowerName.includes('linux')) {
+    return { icon: 'mdi:linux', color: '#FCC624' };
+  }
+
+  // Unknown
+  return { icon: 'mdi:help-circle-outline', color: '#9E9E9E' };
+}
 
 export interface VirtualMachineInstanceListProps {
   virtualMachineInstances: VirtualMachineInstance[] | null;
@@ -95,6 +184,9 @@ function getPhaseColor(phase: string): 'success' | 'error' | 'warning' | 'info' 
 export function VirtualMachineInstanceListRenderer(props: VirtualMachineInstanceListProps) {
   const { virtualMachineInstances, error, hideColumns = [], noNamespaceFilter } = props;
   const { enqueueSnackbar } = useSnackbar();
+  const [selectedVMI, setSelectedVMI] = useState<VirtualMachineInstance | null>(null);
+  const [vncOpen, setVncOpen] = useState(false);
+  const [sshOpen, setSshOpen] = useState(false);
 
   const handleMigrate = async (vmi: VirtualMachineInstance) => {
     try {
@@ -125,6 +217,7 @@ export function VirtualMachineInstanceListRenderer(props: VirtualMachineInstance
   };
 
   return (
+    <>
     <Resource.ResourceListView
       title={'Virtual Machine Instances'}
       headerProps={{
@@ -136,6 +229,7 @@ export function VirtualMachineInstanceListRenderer(props: VirtualMachineInstance
         {
           id: 'name',
           label: 'Name',
+          gridTemplate: '1.5fr',
           getValue: vmi => vmi.getName(),
           render: vmi => (
             <Link
@@ -171,6 +265,7 @@ export function VirtualMachineInstanceListRenderer(props: VirtualMachineInstance
         {
           id: 'status',
           label: 'Status',
+          gridTemplate: '0.7fr',
           getValue: vmi => vmi.status?.phase || 'Unknown',
           render: vmi => {
             const phase = vmi.status?.phase || 'Unknown';
@@ -214,26 +309,29 @@ export function VirtualMachineInstanceListRenderer(props: VirtualMachineInstance
         },
         {
           id: 'os',
-          label: 'Operating System',
+          label: 'OS',
+          gridTemplate: '0.4fr',
           getValue: vmi => getOSInfo(vmi).full,
           render: vmi => {
             const osInfo = getOSInfo(vmi);
             if (!osInfo.name) {
               return <Typography variant="caption" color="text.secondary">-</Typography>;
             }
+            const osIcon = getOSIcon(osInfo.full);
             return (
               <Tooltip title={osInfo.full}>
-                <Typography
-                  variant="body2"
-                  sx={{
-                    maxWidth: 250,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {osInfo.name}
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                  <ActionButton
+                    description={osInfo.full}
+                    icon={osIcon.icon}
+                    iconButtonProps={{
+                      size: 'small',
+                      disableRipple: true,
+                      sx: { color: osIcon.color, cursor: 'default', '&:hover': { backgroundColor: 'transparent' } },
+                    }}
+                    onClick={() => {}}
+                  />
+                </Box>
               </Tooltip>
             );
           },
@@ -242,6 +340,7 @@ export function VirtualMachineInstanceListRenderer(props: VirtualMachineInstance
           id: 'cpu',
           label: 'CPU',
           gridTemplate: '0.5fr',
+          show: false, // Hidden by default
           getValue: vmi => {
             const domain = vmi.spec?.domain;
             const cores = domain?.cpu?.cores || 1;
@@ -262,6 +361,7 @@ export function VirtualMachineInstanceListRenderer(props: VirtualMachineInstance
           id: 'memory',
           label: 'Mem',
           gridTemplate: '0.5fr',
+          show: false, // Hidden by default
           getValue: vmi => {
             const domain = vmi.spec?.domain;
             return domain?.resources?.requests?.memory ||
@@ -279,8 +379,41 @@ export function VirtualMachineInstanceListRenderer(props: VirtualMachineInstance
           },
         },
         {
-          id: 'actions',
-          label: 'Actions',
+          id: 'connect',
+          label: 'Connect',
+          gridTemplate: '0.5fr',
+          getValue: () => '',
+          render: vmi => {
+            const phase = vmi.status?.phase || 'Unknown';
+            const isRunning = phase === 'Running';
+            if (!isRunning) {
+              return <Typography variant="caption" color="text.secondary">-</Typography>;
+            }
+            return (
+              <Box sx={{ display: 'flex', gap: 0.5 }}>
+                <ActionButton
+                  description="VNC Console"
+                  icon="mdi:monitor"
+                  onClick={() => {
+                    setSelectedVMI(vmi);
+                    setVncOpen(true);
+                  }}
+                />
+                <ActionButton
+                  description="SSH"
+                  icon="mdi:console-network"
+                  onClick={() => {
+                    setSelectedVMI(vmi);
+                    setSshOpen(true);
+                  }}
+                />
+              </Box>
+            );
+          },
+        },
+        {
+          id: 'vmiControls',
+          label: 'Controls',
           getValue: () => '',
           render: vmi => {
             const phase = vmi.status?.phase || 'Unknown';
@@ -296,8 +429,8 @@ export function VirtualMachineInstanceListRenderer(props: VirtualMachineInstance
                       onClick={() => vmi.pause()}
                     />
                     <ActionButton
-                      description="Migrate"
-                      icon="mdi:arrow-left-right"
+                      description="Live Migrate"
+                      icon="mdi:swap-horizontal"
                       onClick={() => handleMigrate(vmi)}
                     />
                   </>
@@ -319,6 +452,28 @@ export function VirtualMachineInstanceListRenderer(props: VirtualMachineInstance
       reflectInURL
       id="headlamp-virtualmachineinstances"
     />
+    {/* Console Dialogs */}
+    {selectedVMI && (
+      <>
+        <VncConsole
+          item={selectedVMI}
+          open={vncOpen}
+          onClose={() => {
+            setVncOpen(false);
+            setSelectedVMI(null);
+          }}
+        />
+        <SshConsole
+          item={selectedVMI}
+          open={sshOpen}
+          onClose={() => {
+            setSshOpen(false);
+            setSelectedVMI(null);
+          }}
+        />
+      </>
+    )}
+    </>
   );
 }
 

@@ -3,21 +3,13 @@ import { StreamArgs, StreamResultsCb } from '@kinvolk/headlamp-plugin/lib/ApiPro
 import { Dialog } from '@kinvolk/headlamp-plugin/lib/CommonComponents';
 import { KubeObject } from '@kinvolk/headlamp-plugin/lib/K8s/cluster';
 import type { DialogProps } from '@mui/material';
-import { Box } from '@mui/material';
+import { Box, Button } from '@mui/material';
 import DialogContent from '@mui/material/DialogContent';
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal as XTerminal } from '@xterm/xterm';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import VirtualMachineInstance from '../VirtualMachineInstance/VirtualMachineInstance';
-
-enum Channel {
-  StdIn = 0,
-  StdOut,
-  StdErr,
-  ServerError,
-  Resize,
-}
 
 interface TerminalProps extends DialogProps {
   item: VirtualMachineInstance;
@@ -32,36 +24,51 @@ interface ConsoleObject extends KubeObject {
   ): { cancel: () => void; getSocket: () => WebSocket };
 }
 
-interface XTerminalConnected {
-  xterm: XTerminal;
-  connected: boolean;
-  reconnectOnEnter: boolean;
-}
 type execReturn = ReturnType<ConsoleObject['exec']>;
 
 export default function Terminal(props: TerminalProps) {
   const { item, onClose, ...other } = props;
   const execRef = useRef<execReturn | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
-  const xtermRef = useRef<XTerminalConnected | null>(null);
+  const xtermRef = useRef<XTerminal | null>(null);
   const [terminalRef, setTerminalRef] = useState<HTMLElement | null>(null);
+  const [connected, setConnected] = useState(false);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+  const mountedRef = useRef(true);
+  const hasConnectedRef = useRef(false);
+  const isConnectingRef = useRef(false);
 
   const { t } = useTranslation(['translation', 'glossary']);
-  const encoder = new TextEncoder();
-  const decoder = new TextDecoder('utf-8');
-  function setupTerminal(itemRef: HTMLElement, xterm: XTerminal, fitAddon: FitAddon) {
-    if (!itemRef) {
+
+  // Memoize encoder/decoder to prevent recreating on every render
+  const encoder = useMemo(() => new TextEncoder(), []);
+  const decoder = useMemo(() => new TextDecoder('utf-8'), []);
+
+  const send = useCallback((data: string) => {
+    if (!execRef.current) {
+      return;
+    }
+    const socket = execRef.current.getSocket();
+
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    // KubeVirt console expects raw data
+    const encoded = encoder.encode(data);
+    socket.send(encoded);
+  }, [encoder]);
+
+  const setupTerminal = useCallback((itemRef: HTMLElement, xterm: XTerminal, fitAddon: FitAddon) => {
+    if (!itemRef || !xterm) {
       return;
     }
 
     xterm.open(itemRef);
 
+    // Send input data to the console
     xterm.onData(data => {
-      send(0, data);
-    });
-
-    xterm.onResize(size => {
-      send(4, `{"Width":${size.cols},"Height":${size.rows}}`);
+      send(data);
     });
 
     // Allow copy/paste in terminal
@@ -77,122 +84,149 @@ export default function Terminal(props: TerminalProps) {
           return false;
         }
       }
-
       return true;
     });
+
     fitAddon.fit();
-  }
+  }, [send]);
 
-  function send(channel: number, data: string) {
-    console.debug('Sending data to exec:', data);
-    if (!execRef.current) {
-      console.debug('Could not send data to exec: execRef not initialized');
-      return;
-    }
-    const socket = execRef.current.getSocket();
-
-    if (!socket || socket.readyState !== 1) {
-      console.debug('Could not send data to exec: Socket not ready...', socket);
-      return;
-    }
-    const encoded = encoder.encode(data);
-    console.debug('Sending data to exec2:', data);
-
-    socket.send(encoded);
-  }
-  function onData(xtermc: XTerminalConnected, bytes: ArrayBuffer) {
-    console.debug('ondata', xtermc, bytes);
-    const xterm = xtermc.xterm;
-    // Only show data from stdout, stderr and server error channel.
-    const channel: Channel = new Int8Array(bytes.slice(0, 1))[0];
-    if (channel < Channel.StdOut || channel > Channel.ServerError) {
-      console.warn('Ignoring channel:', channel);
+  const connect = useCallback(() => {
+    if (!item || !xtermRef.current) {
       return;
     }
 
-    // The first byte is discarded because it just identifies whether
-    // this data is from stderr, stdout, or stdin.
-    const text = decoder.decode(bytes.slice(1));
-    if (!xtermc.connected) {
-      xtermc.connected = true;
-      xterm.writeln(t('Connected to terminal…'));
+    // Prevent duplicate connections
+    if (isConnectingRef.current) {
+      return;
     }
 
-    xterm.write(text);
-  }
-  useEffect(
-    () => {
-      console.log('useEffect');
-      // Don't do anything if the dialog is not open.
-      if (!props.open) {
-        return;
+    const xterm = xtermRef.current;
+
+    // Clean up any existing connection
+    if (execRef.current) {
+      execRef.current.cancel();
+      execRef.current = null;
+    }
+
+    isConnectingRef.current = true;
+    setConnected(false);
+    setConnectionError(null);
+    xterm.writeln(t('⌛ Connecting to console…'));
+
+    execRef.current = item.exec(
+      (data: ArrayBuffer) => {
+        if (!mountedRef.current) return;
+
+        // KubeVirt console returns raw bytes without channel prefix
+        const text = decoder.decode(data);
+        if (text) {
+          xterm.write(text);
+        }
+      },
+      {
+        reconnectOnFailure: false, // Don't auto-reconnect to avoid loops
+        failCb: () => {
+          if (!mountedRef.current) return;
+          isConnectingRef.current = false;
+          hasConnectedRef.current = false;
+          setConnected(false);
+          setConnectionError('Connection closed');
+          xterm.writeln(t('\r\n❌ Connection closed. Click "Reconnect" to try again.'));
+        },
+        connectCb: () => {
+          if (!mountedRef.current) return;
+          isConnectingRef.current = false;
+          hasConnectedRef.current = true;
+          setConnected(true);
+          setConnectionError(null);
+          xterm.writeln(t('✅ Connected. Press Enter to activate the console.\r\n'));
+        },
       }
+    );
+  }, [item, t, decoder]);
 
-      if (xtermRef.current) {
-        xtermRef.current.xterm.dispose();
-        execRef.current?.cancel();
+  const handleReconnect = useCallback(() => {
+    // Reset connection state for manual reconnect
+    hasConnectedRef.current = false;
+    isConnectingRef.current = false;
+    if (xtermRef.current) {
+      xtermRef.current.clear();
+    }
+    connect();
+  }, [connect]);
+
+  // Initialize terminal when dialog opens
+  useEffect(() => {
+    mountedRef.current = true;
+
+    if (!props.open) {
+      return;
+    }
+
+    // Reset connection tracking when dialog opens
+    hasConnectedRef.current = false;
+    isConnectingRef.current = false;
+
+    // Create terminal instance
+    const isWindows = ['Windows', 'Win16', 'Win32', 'WinCE'].indexOf(navigator?.platform) >= 0;
+    const xterm = new XTerminal({
+      cursorBlink: true,
+      cursorStyle: 'underline',
+      scrollback: 10000,
+      rows: 30,
+      windowsMode: isWindows,
+      allowProposedApi: true,
+    });
+    xtermRef.current = xterm;
+
+    const fitAddon = new FitAddon();
+    fitAddonRef.current = fitAddon;
+    xterm.loadAddon(fitAddon);
+
+    return () => {
+      mountedRef.current = false;
+      hasConnectedRef.current = false;
+      isConnectingRef.current = false;
+      xterm.dispose();
+      if (execRef.current) {
+        execRef.current.cancel();
+        execRef.current = null;
       }
+    };
+  }, [props.open]);
 
-      const isWindows = ['Windows', 'Win16', 'Win32', 'WinCE'].indexOf(navigator?.platform) >= 0;
-      xtermRef.current = {
-        xterm: new XTerminal({
-          cursorBlink: true,
-          cursorStyle: 'underline',
-          scrollback: 10000,
-          rows: 30, // initial rows before fit
-          windowsMode: isWindows,
-          allowProposedApi: true,
-        }),
-        connected: false,
-        reconnectOnEnter: false,
-      };
+  // Setup terminal when DOM element is ready
+  useEffect(() => {
+    if (!props.open || !terminalRef || !xtermRef.current || !fitAddonRef.current) {
+      return;
+    }
 
-      fitAddonRef.current = new FitAddon();
-      xtermRef.current.xterm.loadAddon(fitAddonRef.current);
+    // Only setup and connect once per dialog open
+    if (hasConnectedRef.current || isConnectingRef.current) {
+      return;
+    }
 
-      (async function () {
-        //xtermRef?.current?.xterm.writeln(t('Trying to run "{{command}}"…', { command }) + '\n');
-        xtermRef?.current?.xterm.writeln(t('⌛ Connecting to console…') + '\n');
-        execRef.current = await item.exec(items => onData(xtermRef.current!, items), {
-          reconnectOnFailure: false,
-          failCb: () => {
-            xtermRef.current!.xterm.write(encoder.encode(t('\r\n')));
-          },
-          connectCb: () => {
-            xtermRef.current!.connected = true;
-            xtermRef.current!.xterm.writeln(t('✅ Connected to console…'));
-          },
-          tty: false,
-          stderr: false,
-          stdin: false,
-          stdout: false,
-        });
-        console.log(execRef.current);
-        setupTerminal(terminalRef, xtermRef.current!.xterm, fitAddonRef.current!);
-      })();
+    setupTerminal(terminalRef, xtermRef.current, fitAddonRef.current);
 
-      const handler = () => {
-        fitAddonRef.current!.fit();
-      };
+    // Connect after terminal is set up
+    connect();
 
-      window.addEventListener('resize', handler);
+    const handler = () => {
+      fitAddonRef.current?.fit();
+    };
+    window.addEventListener('resize', handler);
 
-      return function cleanup() {
-        xtermRef.current?.xterm.dispose();
-        execRef.current?.cancel();
-        window.removeEventListener('resize', handler);
-      };
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [terminalRef, props.open]
-  );
+    return () => {
+      window.removeEventListener('resize', handler);
+    };
+  }, [props.open, terminalRef, setupTerminal, connect]);
 
   return (
     <Dialog
       onClose={onClose}
       onFullScreenToggled={() => {
         setTimeout(() => {
-          fitAddonRef.current!.fit();
+          fitAddonRef.current?.fit();
         }, 1);
       }}
       withFullScreen
@@ -205,9 +239,9 @@ export default function Terminal(props: TerminalProps) {
           display: 'flex',
           flexDirection: 'column',
           '& .xterm ': {
-            height: '100vh', // So the terminal doesn't stay shrunk when shrinking vertically and maximizing again.
+            height: '100vh',
             '& .xterm-viewport': {
-              width: 'initial !important', // BugFix: https://github.com/xtermjs/xterm.js/issues/3564#issuecomment-1004417440
+              width: 'initial !important',
             },
           },
           '& #xterm-container': {
@@ -219,6 +253,17 @@ export default function Terminal(props: TerminalProps) {
           },
         })}
       >
+        {connectionError && (
+          <Box sx={{ mb: 1, display: 'flex', justifyContent: 'flex-end' }}>
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={handleReconnect}
+            >
+              Reconnect
+            </Button>
+          </Box>
+        )}
         <Box
           sx={theme => ({
             paddingTop: theme.spacing(1),
