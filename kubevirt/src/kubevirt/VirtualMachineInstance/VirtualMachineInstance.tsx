@@ -54,6 +54,21 @@ class VirtualMachineInstance extends KubeObject {
     return `${protocol}//${host}${clusterPrefix}/apis/subresources.kubevirt.io/v1/namespaces/${this.getNamespace()}/virtualmachineinstances/${this.getName()}/vnc`;
   }
 
+  /**
+   * Get the WebSocket URL for port forwarding to this VMI.
+   * This constructs the full URL that can be used to create a WebSocket directly.
+   */
+  getPortforwardUrl(port: number): string {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.host || 'localhost:4466';
+    // Try to get cluster from the object's internal cluster name first
+    const cluster = (this as any)._clusterName || null;
+    const clusterPrefix = cluster ? `/clusters/${cluster}` : '';
+
+    console.log('Portforward URL - host:', host, 'cluster:', cluster, 'protocol:', protocol, 'port:', port);
+    return `${protocol}//${host}${clusterPrefix}/apis/subresources.kubevirt.io/v1/namespaces/${this.getNamespace()}/virtualmachineinstances/${this.getName()}/portforward?port=${port}`;
+  }
+
   vnc(
     onVnc: StreamResultsCb,
     options: StreamArgs
@@ -62,6 +77,23 @@ class VirtualMachineInstance extends KubeObject {
     return ApiProxy.stream(url, onVnc, {
       isJson: false,
       additionalProtocols: ['base64.binary.k8s.io'],
+      ...options,
+    });
+  }
+
+  /**
+   * Create a port-forward connection to the VM via the KubeVirt portforward subresource.
+   * This creates a WebSocket tunnel to the specified port on the VM.
+   */
+  portforward(
+    port: number,
+    onData: StreamResultsCb,
+    options: StreamArgs
+  ): { cancel: () => void; getSocket: () => WebSocket } {
+    const url = `/apis/subresources.kubevirt.io/v1/namespaces/${this.getNamespace()}/virtualmachineinstances/${this.getName()}/portforward?port=${port}`;
+    return ApiProxy.stream(url, onData, {
+      isJson: false,
+      additionalProtocols: ['plain.kubevirt.io'],
       ...options,
     });
   }

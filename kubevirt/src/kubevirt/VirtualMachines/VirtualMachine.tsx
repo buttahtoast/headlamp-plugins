@@ -269,6 +269,36 @@ class VirtualMachine extends KubeObject {
     return instance.vnc(onVnc, options);
   }
 
+  /**
+   * Create a port-forward connection to the VM via the KubeVirt portforward subresource.
+   */
+  portforward(
+    port: number,
+    onData: StreamResultsCb,
+    options: StreamArgs
+  ): { cancel: () => void; getSocket: () => WebSocket } {
+    const vmiData = {
+      ...this.jsonData,
+      kind: VirtualMachineInstance.kind,
+      apiVersion: VirtualMachineInstance.apiVersion,
+    };
+    const instance = new VirtualMachineInstance(vmiData);
+    return instance.portforward(port, onData, options);
+  }
+
+  /**
+   * Get the WebSocket URL for port forwarding to this VM.
+   */
+  getPortforwardUrl(port: number): string {
+    const vmiData = {
+      ...this.jsonData,
+      kind: VirtualMachineInstance.kind,
+      apiVersion: VirtualMachineInstance.apiVersion,
+    };
+    const instance = new VirtualMachineInstance(vmiData);
+    return instance.getPortforwardUrl(port);
+  }
+
   static kind = 'VirtualMachine';
   static apiVersion = 'kubevirt.io/v1';
   static isNamespaced = true;

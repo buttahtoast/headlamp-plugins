@@ -35,10 +35,11 @@ import { useSnackbar } from 'notistack';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router-dom';
+import { CPUConfigurationGrid, MemoryGrid } from '../components/HardwareGrids';
 import LiveMigrationDialog from '../components/LiveMigrationDialog';
+import NetworkInterfacesGrid from '../components/NetworkInterfacesGrid';
 import SchedulingAffinity from '../components/SchedulingAffinity';
-import SshConsole from '../SshConsole/SshConsole';
-import Terminal from '../Terminal/Terminal';
+import SshTerminal from '../SshTerminal/SshTerminal';
 import VncConsole from '../VncConsole/VncConsole';
 import { formatBytes, parseK8sSize } from '../utils/kubeVirtCheck';
 import VirtualMachine from './VirtualMachine';
@@ -178,8 +179,7 @@ function PortForwardingSection({ vmName, namespace }: PortForwardingSectionProps
           Expose VM ports via Kubernetes Services
         </Typography>
         <Button
-          variant="outlined"
-          size="small"
+          variant="contained"
           startIcon={<Icon icon="mdi:plus" />}
           onClick={() => setDialogOpen(true)}
         >
@@ -199,33 +199,33 @@ function PortForwardingSection({ vmName, namespace }: PortForwardingSectionProps
         </Paper>
       ) : (
         <TableContainer component={Paper} variant="outlined">
-          <Table size="small">
+          <Table size="medium">
             <TableHead>
               <TableRow>
-                <TableCell>Service</TableCell>
-                <TableCell>Type</TableCell>
-                <TableCell>Port</TableCell>
-                <TableCell>Node Port</TableCell>
-                <TableCell>Connection</TableCell>
-                <TableCell>Actions</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', fontSize: '1rem' }}>Service</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', fontSize: '1rem' }}>Type</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', fontSize: '1rem' }}>Port</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', fontSize: '1rem' }}>Node Port</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', fontSize: '1rem' }}>Connection</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', fontSize: '1rem' }}>Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {services.flatMap(svc =>
                 svc.spec?.ports?.map((port: any, idx: number) => (
                   <TableRow key={`${svc.metadata.name}-${idx}`}>
-                    <TableCell>{svc.metadata.name}</TableCell>
-                    <TableCell>
+                    <TableCell sx={{ fontSize: '1rem' }}>{svc.metadata.name}</TableCell>
+                    <TableCell sx={{ fontSize: '1rem' }}>
                       <Chip label={svc.spec.type} size="small" variant="outlined" />
                     </TableCell>
-                    <TableCell>{port.port}</TableCell>
-                    <TableCell>{port.nodePort || '-'}</TableCell>
-                    <TableCell>
+                    <TableCell sx={{ fontSize: '1rem' }}>{port.port}</TableCell>
+                    <TableCell sx={{ fontSize: '1rem' }}>{port.nodePort || '-'}</TableCell>
+                    <TableCell sx={{ fontSize: '1rem' }}>
                       <Tooltip title="Click to copy">
                         <Box
                           component="code"
                           sx={{
-                            fontSize: '0.8em',
+                            fontSize: '1rem',
                             cursor: 'pointer',
                             bgcolor: 'action.hover',
                             color: 'text.primary',
@@ -241,7 +241,7 @@ function PortForwardingSection({ vmName, namespace }: PortForwardingSectionProps
                         </Box>
                       </Tooltip>
                     </TableCell>
-                    <TableCell>
+                    <TableCell sx={{ fontSize: '1rem' }}>
                       <IconButton size="small" color="error" onClick={() => handleDeleteService(svc)}>
                         <Icon icon="mdi:delete" />
                       </IconButton>
@@ -331,36 +331,16 @@ function parseK8sMemoryToBytes(memory: string | undefined): number {
   return parseK8sSize(memory) || 0;
 }
 
-// Usage bar component
-function UsageBar({ used, total, label }: { used: number; total: number; label?: string }) {
-  const percentage = total > 0 ? Math.min((used / total) * 100, 100) : 0;
-  const color = percentage > 90 ? 'error' : percentage > 70 ? 'warning' : 'primary';
-
-  return (
-    <Tooltip title={label || `${percentage.toFixed(1)}% used`}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 120 }}>
-        <LinearProgress
-          variant="determinate"
-          value={percentage}
-          color={color}
-          sx={{ flexGrow: 1, height: 8, borderRadius: 4 }}
-        />
-        <Typography variant="caption" sx={{ minWidth: 45 }}>
-          {percentage.toFixed(0)}%
-        </Typography>
-      </Box>
-    </Tooltip>
-  );
-}
-
 export default function VirtualMachineDetails(props: VirtualMachineDetailsProps) {
   const params = useParams<{ namespace: string; name: string }>();
   const { name = params.name, namespace = params.namespace } = props;
   const { t } = useTranslation('glossary');
   const { enqueueSnackbar } = useSnackbar();
-  const [showTerminal, setShowTerminal] = useState(false);
   const [showVnc, setShowVnc] = useState(false);
-  const [showSsh, setShowSsh] = useState(false);
+  const [showSshTerminal, setShowSshTerminal] = useState(false);
+  const [sshTargetIp, setSshTargetIp] = useState<string | undefined>(undefined);
+  const [sshIsPodNetwork, setSshIsPodNetwork] = useState<boolean | undefined>(undefined);
+  const [sshDefaultTab, setSshDefaultTab] = useState<'console' | 'ssh'>('console');
   const [vmItem, setVmItem] = useState<VirtualMachine | null>(null);
   const [snapshotDialog, setSnapshotDialog] = useState(false);
   const [snapshotName, setSnapshotName] = useState('');
@@ -643,13 +623,6 @@ export default function VirtualMachineDetails(props: VirtualMachineDetailsProps)
 
   return (
     <>
-      {vmItem && showTerminal && (
-        <Terminal
-          open
-          item={vmItem}
-          onClose={() => setShowTerminal(false)}
-        />
-      )}
       {vmItem && showVnc && (
         <VncConsole
           open
@@ -657,12 +630,19 @@ export default function VirtualMachineDetails(props: VirtualMachineDetailsProps)
           onClose={() => setShowVnc(false)}
         />
       )}
-      {vmItem && showSsh && (
-        <SshConsole
+      {vmItem && showSshTerminal && (
+        <SshTerminal
           open
           item={vmItem}
           vmSpec={vmItem.jsonData}
-          onClose={() => setShowSsh(false)}
+          targetIp={sshTargetIp}
+          isPodNetwork={sshIsPodNetwork}
+          defaultTab={sshDefaultTab}
+          onClose={() => {
+            setShowSshTerminal(false);
+            setSshTargetIp(undefined);
+            setSshDefaultTab('console');
+          }}
         />
       )}
       {vmItem && (
@@ -816,172 +796,22 @@ export default function VirtualMachineDetails(props: VirtualMachineDetailsProps)
                 <SectionBox title={t('Hardware Configuration')}>
                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                     {/* CPU Section */}
-                    <Box>
-                      <Typography variant="subtitle2" gutterBottom>
-                        CPU Configuration
-                      </Typography>
-                      <TableContainer component={Paper} variant="outlined">
-                        <Table size="small">
-                          <TableBody>
-                            <TableRow>
-                              <TableCell sx={{ fontWeight: 'bold', width: '30%' }}>Allocated vCPUs</TableCell>
-                              <TableCell>{hw.cpu.total}</TableCell>
-                            </TableRow>
-                            <TableRow>
-                              <TableCell sx={{ fontWeight: 'bold' }}>Topology</TableCell>
-                              <TableCell>
-                                {hw.cpu.sockets} socket(s) × {hw.cpu.cores} core(s) × {hw.cpu.threads} thread(s)
-                              </TableCell>
-                            </TableRow>
-                            <TableRow>
-                              <TableCell sx={{ fontWeight: 'bold' }}>Model</TableCell>
-                              <TableCell>{hw.cpu.model}</TableCell>
-                            </TableRow>
-                          </TableBody>
-                        </Table>
-                      </TableContainer>
-                      <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                        Note: Real-time CPU usage requires metrics-server or Prometheus integration
-                      </Typography>
-                    </Box>
+                    <CPUConfigurationGrid cpu={hw.cpu} />
 
                     {/* Memory Section */}
-                    <Box>
-                      <Typography variant="subtitle2" gutterBottom>
-                        Memory
-                      </Typography>
-                      <TableContainer component={Paper} variant="outlined">
-                        <Table size="small">
-                          <TableBody>
-                            <TableRow>
-                              <TableCell sx={{ fontWeight: 'bold', width: '30%' }}>Allocated</TableCell>
-                              <TableCell>{formatBytes(hw.memory.allocated)}</TableCell>
-                            </TableRow>
-                            {hw.memory.totalBytes && (
-                              <TableRow>
-                                <TableCell sx={{ fontWeight: 'bold' }}>Total (Guest)</TableCell>
-                                <TableCell>{formatBytes(hw.memory.totalBytes)}</TableCell>
-                              </TableRow>
-                            )}
-                            {hw.memory.usedBytes !== undefined && hw.memory.totalBytes && (
-                              <TableRow>
-                                <TableCell sx={{ fontWeight: 'bold' }}>Used</TableCell>
-                                <TableCell>
-                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                                    <span>{formatBytes(hw.memory.usedBytes)}</span>
-                                    <UsageBar
-                                      used={hw.memory.usedBytes}
-                                      total={hw.memory.totalBytes}
-                                      label={`${formatBytes(hw.memory.usedBytes)} used of ${formatBytes(hw.memory.totalBytes)}`}
-                                    />
-                                  </Box>
-                                </TableCell>
-                              </TableRow>
-                            )}
-                            {hw.memory.availableBytes !== undefined && (
-                              <TableRow>
-                                <TableCell sx={{ fontWeight: 'bold' }}>Available</TableCell>
-                                <TableCell>{formatBytes(hw.memory.availableBytes)}</TableCell>
-                              </TableRow>
-                            )}
-                          </TableBody>
-                        </Table>
-                      </TableContainer>
-                      {!hw.memory.totalBytes && (
-                        <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                          Memory usage requires qemu-guest-agent running in the VM
-                        </Typography>
-                      )}
-                    </Box>
+                    <MemoryGrid memory={hw.memory} />
 
                     {/* Network Section */}
-                    <Box>
-                      <Typography variant="subtitle2" gutterBottom>
-                        Network Interfaces ({hw.networks.length})
-                      </Typography>
-                      <TableContainer component={Paper} variant="outlined">
-                        <Table size="small">
-                          <TableHead>
-                            <TableRow>
-                              <TableCell sx={{ fontWeight: 'bold' }}>Name</TableCell>
-                              <TableCell sx={{ fontWeight: 'bold' }}>Type</TableCell>
-                              <TableCell sx={{ fontWeight: 'bold' }}>Model</TableCell>
-                              <TableCell sx={{ fontWeight: 'bold' }}>MAC Address</TableCell>
-                              <TableCell sx={{ fontWeight: 'bold' }}>IPv4</TableCell>
-                              <TableCell sx={{ fontWeight: 'bold' }}>IPv6</TableCell>
-                              <TableCell sx={{ fontWeight: 'bold' }}>Network</TableCell>
-                            </TableRow>
-                          </TableHead>
-                          <TableBody>
-                            {hw.networks.map((iface: any, idx: number) => (
-                              <TableRow key={idx}>
-                                <TableCell>{iface.name}</TableCell>
-                                <TableCell>
-                                  <Chip
-                                    label={iface.type}
-                                    size="small"
-                                    variant="outlined"
-                                  />
-                                </TableCell>
-                                <TableCell>{iface.model}</TableCell>
-                                <TableCell>
-                                  <code style={{ fontSize: '0.8em' }}>
-                                    {iface.macAddress || 'auto'}
-                                  </code>
-                                </TableCell>
-                                <TableCell>
-                                  {iface.ipv4?.length > 0 ? (
-                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                                      {iface.ipv4.map((ip: string, ipIdx: number) => (
-                                        <code key={ipIdx} style={{ fontSize: '0.8em' }}>{ip}</code>
-                                      ))}
-                                    </Box>
-                                  ) : (
-                                    <Typography variant="caption" color="text.secondary">-</Typography>
-                                  )}
-                                </TableCell>
-                                <TableCell>
-                                  {iface.ipv6?.length > 0 ? (
-                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                                      {iface.ipv6.map((ip: string, ipIdx: number) => (
-                                        <code key={ipIdx} style={{ fontSize: '0.75em' }}>{ip}</code>
-                                      ))}
-                                    </Box>
-                                  ) : (
-                                    <Typography variant="caption" color="text.secondary">-</Typography>
-                                  )}
-                                </TableCell>
-                                <TableCell>
-                                  {iface.network?.pod ? (
-                                    'Pod Network'
-                                  ) : iface.network?.multus?.networkName ? (
-                                    (() => {
-                                      const networkName = iface.network.multus.networkName;
-                                      // Network name can be "name" or "namespace/name"
-                                      let nadName = networkName;
-                                      let nadNamespace = item.getNamespace();
-                                      if (networkName.includes('/')) {
-                                        [nadNamespace, nadName] = networkName.split('/');
-                                      }
-                                      return (
-                                        <Link
-                                          routeName="networkattachmentdefinition"
-                                          params={{ name: nadName, namespace: nadNamespace }}
-                                        >
-                                          {networkName}
-                                        </Link>
-                                      );
-                                    })()
-                                  ) : (
-                                    'unknown'
-                                  )}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </TableContainer>
-                    </Box>
+                    <NetworkInterfacesGrid
+                      interfaces={hw.networks}
+                      namespace={item.getNamespace()}
+                      onSshClick={(ip, isPodNetwork) => {
+                        setSshTargetIp(ip);
+                        setSshIsPodNetwork(isPodNetwork);
+                        setSshDefaultTab('ssh');
+                        setShowSshTerminal(true);
+                      }}
+                    />
                   </Box>
                 </SectionBox>
               ),
@@ -1022,11 +852,11 @@ export default function VirtualMachineDetails(props: VirtualMachineDetailsProps)
                                 <Chip label="User Password" size="small" color="warning" />
                               </Box>
                               <TableContainer>
-                                <Table size="small">
+                                <Table size="medium">
                                   <TableBody>
                                     <TableRow>
-                                      <TableCell sx={{ fontWeight: 'bold', width: '30%' }}>Propagation Method</TableCell>
-                                      <TableCell>
+                                      <TableCell sx={{ fontWeight: 'bold', width: '30%', fontSize: '1rem' }}>Propagation Method</TableCell>
+                                      <TableCell sx={{ fontSize: '1rem' }}>
                                         {propagation?.qemuGuestAgent && (
                                           <Chip label="QEMU Guest Agent" size="small" variant="outlined" color="info" />
                                         )}
@@ -1036,8 +866,8 @@ export default function VirtualMachineDetails(props: VirtualMachineDetailsProps)
                                       </TableCell>
                                     </TableRow>
                                     <TableRow>
-                                      <TableCell sx={{ fontWeight: 'bold' }}>Secret</TableCell>
-                                      <TableCell>
+                                      <TableCell sx={{ fontWeight: 'bold', fontSize: '1rem' }}>Secret</TableCell>
+                                      <TableCell sx={{ fontSize: '1rem' }}>
                                         {source?.secret?.secretName ? (
                                           <Link
                                             routeName="secret"
@@ -1071,11 +901,11 @@ export default function VirtualMachineDetails(props: VirtualMachineDetailsProps)
                                 <Chip label="SSH Public Key" size="small" color="success" />
                               </Box>
                               <TableContainer>
-                                <Table size="small">
+                                <Table size="medium">
                                   <TableBody>
                                     <TableRow>
-                                      <TableCell sx={{ fontWeight: 'bold', width: '30%' }}>Propagation Method</TableCell>
-                                      <TableCell>
+                                      <TableCell sx={{ fontWeight: 'bold', width: '30%', fontSize: '1rem' }}>Propagation Method</TableCell>
+                                      <TableCell sx={{ fontSize: '1rem' }}>
                                         {propagation?.qemuGuestAgent && (
                                           <Chip label="QEMU Guest Agent" size="small" variant="outlined" color="info" />
                                         )}
@@ -1089,8 +919,8 @@ export default function VirtualMachineDetails(props: VirtualMachineDetailsProps)
                                     </TableRow>
                                     {users.length > 0 && (
                                       <TableRow>
-                                        <TableCell sx={{ fontWeight: 'bold' }}>Target Users</TableCell>
-                                        <TableCell>
+                                        <TableCell sx={{ fontWeight: 'bold', fontSize: '1rem' }}>Target Users</TableCell>
+                                        <TableCell sx={{ fontSize: '1rem' }}>
                                           <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                                             {users.map((user: string, userIdx: number) => (
                                               <Chip
@@ -1105,8 +935,8 @@ export default function VirtualMachineDetails(props: VirtualMachineDetailsProps)
                                       </TableRow>
                                     )}
                                     <TableRow>
-                                      <TableCell sx={{ fontWeight: 'bold' }}>Secret</TableCell>
-                                      <TableCell>
+                                      <TableCell sx={{ fontWeight: 'bold', fontSize: '1rem' }}>Secret</TableCell>
+                                      <TableCell sx={{ fontSize: '1rem' }}>
                                         {source?.secret?.secretName ? (
                                           <Link
                                             routeName="secret"
@@ -1333,21 +1163,6 @@ export default function VirtualMachineDetails(props: VirtualMachineDetailsProps)
           // Console buttons - when running or paused
           if (isRunning || isPaused) {
             actionsList.push({
-              id: 'console',
-              action: (
-                <ActionButton
-                  description={t('Terminal')}
-                  aria-label={t('terminal')}
-                  icon="mdi:console"
-                  onClick={() => {
-                    console.log('Terminal clicked');
-                    setShowTerminal(true);
-                  }}
-                />
-              ),
-            });
-
-            actionsList.push({
               id: 'vnc',
               action: (
                 <ActionButton
@@ -1365,10 +1180,12 @@ export default function VirtualMachineDetails(props: VirtualMachineDetailsProps)
               id: 'ssh',
               action: (
                 <ActionButton
-                  description={t('SSH Connection')}
+                  description={t('SSH/Serial Console')}
                   icon="mdi:console-network"
                   onClick={() => {
-                    setShowSsh(true);
+                    setSshTargetIp(undefined);
+                    setSshIsPodNetwork(undefined);
+                    setShowSshTerminal(true);
                   }}
                 />
               ),

@@ -664,6 +664,7 @@ export default function VncConsole(props: VncConsoleProps) {
       open={open}
       onClose={onClose}
       withFullScreen
+      fullScreen
       title={`VNC Console: ${item.getName()}`}
       {...other}
     >

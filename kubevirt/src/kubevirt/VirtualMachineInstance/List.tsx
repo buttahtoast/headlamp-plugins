@@ -17,7 +17,7 @@ import { useMemo, useState } from 'react';
 import LiveMigrationDialog from '../components/LiveMigrationDialog';
 import { ResourceList, ResourceListColumn } from '../components/ResourceList';
 import { useKubeVirtInstalled, KubeVirtNotInstalled, KubeVirtCheckLoading, formatBytes } from '../utils/kubeVirtCheck';
-import SshConsole from '../SshConsole/SshConsole';
+import SshTerminal from '../SshTerminal/SshTerminal';
 import VncConsole from '../VncConsole/VncConsole';
 import VirtualMachineInstance from './VirtualMachineInstance';
 
@@ -648,7 +648,7 @@ export default function VirtualMachineInstanceList() {
               setSelectedVMI(null);
             }}
           />
-          <SshConsole
+          <SshTerminal
             item={selectedVMI}
             open={sshOpen}
             onClose={() => {

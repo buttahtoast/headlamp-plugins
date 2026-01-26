@@ -223,8 +223,7 @@ export default function BackupSection({ vmName, namespace }: BackupSectionProps)
           Velero backups for this VM
         </Typography>
         <Button
-          variant="outlined"
-          size="small"
+          variant="contained"
           startIcon={<Icon icon="mdi:backup-restore" />}
           onClick={() => {
             setBackupName(`${vmName}-backup-${Date.now()}`);
