@@ -23,6 +23,7 @@ import {
   Radio,
   RadioGroup,
   Select,
+  Switch,
   Table,
   TableBody,
   TableCell,
@@ -43,7 +44,10 @@ import VirtualMachine from '../VirtualMachines/VirtualMachine';
 import VirtualMachineInstance from '../VirtualMachineInstance/VirtualMachineInstance';
 
 interface StorageClass {
-  metadata: { name: string };
+  metadata: {
+    name: string;
+    annotations?: Record<string, string>;
+  };
   provisioner: string;
   volumeBindingMode: string;
   reclaimPolicy: string;
@@ -100,6 +104,22 @@ export default function DiskManagement({
   // Resize form state
   const [newSize, setNewSize] = useState('');
   const [sizeUnit, setSizeUnit] = useState('Gi');
+
+  // Migration form state
+  const [migrateDialogOpen, setMigrateDialogOpen] = useState(false);
+  const [targetStorageClass, setTargetStorageClass] = useState('');
+  const [cloneStrategy, setCloneStrategy] = useState<'csi-clone' | 'snapshot' | 'copy'>('csi-clone');
+  const [migrationName, setMigrationName] = useState('');
+  const [migrationInProgress, setMigrationInProgress] = useState(false);
+  const [autoSwitchDisk, setAutoSwitchDisk] = useState(true);
+  const [activeMigrations, setActiveMigrations] = useState<Record<string, {
+    dvName: string;
+    status: string;
+    progress?: number;
+    diskName: string;
+    sourceDvName?: string;
+    autoSwitch: boolean;
+  }>>({});
 
   // Fetch DataVolumes
   const {items: dataVolumes} = DataVolume.useList({namespace});
@@ -380,12 +400,262 @@ export default function DiskManagement({
     setBusType('scsi');
   };
 
-  // Get storage class recommendation - prioritize Ceph RBD with replication for VMs
-  const getStorageRecommendation = (sc: StorageClass): { score: number; reasons: string[] } => {
+  const resetMigrationForm = () => {
+    setTargetStorageClass('');
+    setCloneStrategy('csi-clone');
+    setMigrationName('');
+    setAutoSwitchDisk(true);
+  };
+
+  // Handle storage migration - creates a new DataVolume by cloning from source
+  const handleMigrateDisk = async () => {
+    if (!selectedDisk || !targetStorageClass || !migrationName) {
+      enqueueSnackbar('Please fill all required fields', { variant: 'warning' });
+      return;
+    }
+
+    const sourceDvName = selectedDisk.volume?.dataVolume?.name;
+    const sourcePvcName = selectedDisk.volume?.persistentVolumeClaim?.claimName || sourceDvName;
+
+    if (!sourcePvcName) {
+      enqueueSnackbar('Can only migrate DataVolume or PVC-backed disks', { variant: 'error' });
+      return;
+    }
+
+    // Check if target storage class is same as source
+    if (selectedDisk.storageClassName === targetStorageClass) {
+      enqueueSnackbar('Target storage class is same as source', { variant: 'warning' });
+      return;
+    }
+
+    setMigrationInProgress(true);
+    try {
+      // Create a new DataVolume that clones from the source PVC
+      const newDataVolume: any = {
+        apiVersion: 'cdi.kubevirt.io/v1beta1',
+        kind: 'DataVolume',
+        metadata: {
+          name: migrationName,
+          namespace: namespace,
+          labels: {
+            'kubevirt.io/storage-migration': 'true',
+            'kubevirt.io/source-pvc': sourcePvcName,
+            'kubevirt.io/vm': vm?.getName() || vmi?.getName() || '',
+          },
+          annotations: {
+            'cdi.kubevirt.io/storage.bind.immediate.requested': 'true',
+          },
+        },
+        spec: {
+          pvc: {
+            storageClassName: targetStorageClass,
+            accessModes: ['ReadWriteOnce'],
+            resources: {
+              requests: {
+                storage: selectedDisk.storageSize || '10Gi',
+              },
+            },
+          },
+          source: {},
+        },
+      };
+
+      // Set clone source based on strategy
+      if (cloneStrategy === 'csi-clone') {
+        newDataVolume.spec.source = {
+          pvc: {
+            namespace: namespace,
+            name: sourcePvcName,
+          },
+        };
+        // CSI clone uses volume cloning
+        newDataVolume.metadata.annotations['cdi.kubevirt.io/cloneType'] = 'csi-clone';
+      } else if (cloneStrategy === 'snapshot') {
+        newDataVolume.spec.source = {
+          pvc: {
+            namespace: namespace,
+            name: sourcePvcName,
+          },
+        };
+        // Snapshot-based clone
+        newDataVolume.metadata.annotations['cdi.kubevirt.io/cloneType'] = 'snapshot';
+      } else {
+        // Host-assisted copy (slowest but most compatible)
+        newDataVolume.spec.source = {
+          pvc: {
+            namespace: namespace,
+            name: sourcePvcName,
+          },
+        };
+        newDataVolume.metadata.annotations['cdi.kubevirt.io/cloneType'] = 'copy';
+      }
+
+      // Create the DataVolume
+      await ApiProxy.request(`/apis/cdi.kubevirt.io/v1beta1/namespaces/${namespace}/datavolumes`, {
+        method: 'POST',
+        body: JSON.stringify(newDataVolume),
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      // Track the migration
+      setActiveMigrations(prev => ({
+        ...prev,
+        [selectedDisk.name]: {
+          dvName: migrationName,
+          status: 'CloneInProgress',
+          progress: 0,
+          diskName: selectedDisk.name,
+          sourceDvName: sourceDvName,
+          autoSwitch: autoSwitchDisk && !isRunning,
+        },
+      }));
+
+      const autoSwitchMsg = autoSwitchDisk && !isRunning
+        ? ' The VM will be automatically updated to use the new disk when complete.'
+        : ' Once complete, you can update the VM to use the new disk.';
+
+      enqueueSnackbar(
+        `Storage migration started. New DataVolume "${migrationName}" is being created.${autoSwitchMsg}`,
+        { variant: 'success' }
+      );
+
+      setMigrateDialogOpen(false);
+      setSelectedDisk(null);
+      resetMigrationForm();
+    } catch (error: any) {
+      enqueueSnackbar(`Failed to start migration: ${error.message}`, { variant: 'error' });
+    }
+    setMigrationInProgress(false);
+  };
+
+  // Auto-switch VM disk to new DataVolume after migration
+  const switchVMDisk = async (diskName: string, newDvName: string) => {
+    if (!vm) return false;
+
+    try {
+      // Get current VM spec
+      const vmData = vm.jsonData;
+      const volumes = vmData?.spec?.template?.spec?.volumes || [];
+
+      // Find the volume index for this disk
+      const volumeIndex = volumes.findIndex((v: any) => v.name === diskName);
+      if (volumeIndex === -1) {
+        console.error(`Volume ${diskName} not found in VM spec`);
+        return false;
+      }
+
+      // Create patch to update the volume to use the new DataVolume
+      const patch = [
+        {
+          op: 'replace',
+          path: `/spec/template/spec/volumes/${volumeIndex}/dataVolume/name`,
+          value: newDvName,
+        },
+      ];
+
+      await ApiProxy.request(
+        `/apis/kubevirt.io/v1/namespaces/${namespace}/virtualmachines/${vm.getName()}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify(patch),
+          headers: { 'Content-Type': 'application/json-patch+json' },
+        }
+      );
+
+      return true;
+    } catch (error) {
+      console.error('Failed to switch VM disk:', error);
+      return false;
+    }
+  };
+
+  // Poll for migration status
+  useEffect(() => {
+    if (Object.keys(activeMigrations).length === 0) return;
+
+    const pollMigrationStatus = async () => {
+      const updatedMigrations: typeof activeMigrations = {};
+
+      for (const [diskName, migration] of Object.entries(activeMigrations)) {
+        try {
+          const dv = await ApiProxy.request(
+            `/apis/cdi.kubevirt.io/v1beta1/namespaces/${namespace}/datavolumes/${migration.dvName}`
+          ) as any;
+
+          const phase = dv.status?.phase || 'Unknown';
+          const progress = dv.status?.progress ? parseInt(dv.status.progress.replace('%', '')) : 0;
+
+          if (phase === 'Succeeded') {
+            // Try to auto-switch if enabled
+            if (migration.autoSwitch && vm && !isRunning) {
+              const switched = await switchVMDisk(migration.diskName, migration.dvName);
+              if (switched) {
+                enqueueSnackbar(
+                  `Migration complete! VM has been updated to use "${migration.dvName}". ` +
+                  `You can delete the old DataVolume "${migration.sourceDvName || 'N/A'}" when ready.`,
+                  { variant: 'success' }
+                );
+              } else {
+                enqueueSnackbar(
+                  `Migration complete! DataVolume "${migration.dvName}" is ready, but auto-switch failed. ` +
+                  `Please manually update the VM to use the new disk.`,
+                  { variant: 'warning' }
+                );
+              }
+            } else {
+              enqueueSnackbar(
+                `Migration complete! DataVolume "${migration.dvName}" is ready. ` +
+                `You can now update the VM to use the new disk.`,
+                { variant: 'success' }
+              );
+            }
+            // Remove from active migrations (don't add to updatedMigrations)
+          } else if (phase === 'Failed') {
+            enqueueSnackbar(
+              `Migration failed for "${migration.dvName}". Check DataVolume status for details.`,
+              { variant: 'error' }
+            );
+            // Remove from active migrations
+          } else {
+            // Still in progress
+            updatedMigrations[diskName] = {
+              ...migration,
+              status: phase,
+              progress,
+            };
+          }
+        } catch (error) {
+          console.error(`Failed to check migration status for ${migration.dvName}:`, error);
+          updatedMigrations[diskName] = migration;
+        }
+      }
+
+      setActiveMigrations(updatedMigrations);
+    };
+
+    const interval = setInterval(pollMigrationStatus, 5000);
+    return () => clearInterval(interval);
+  }, [activeMigrations, namespace, enqueueSnackbar, vm, isRunning]);
+
+  // Check if a storage class is marked as default
+  const isDefaultStorageClass = (sc: StorageClass): boolean => {
+    return sc.metadata.annotations?.['storageclass.kubernetes.io/is-default-class'] === 'true' ||
+           sc.metadata.annotations?.['storageclass.beta.kubernetes.io/is-default-class'] === 'true';
+  };
+
+  // Get storage class recommendation - prioritize default storage class and Ceph RBD for VMs
+  const getStorageRecommendation = (sc: StorageClass): { score: number; reasons: string[]; isDefault: boolean } => {
     const reasons: string[] = [];
     let score = 0;
     const provisioner = sc.provisioner.toLowerCase();
     const params = sc.parameters || {};
+    const isDefault = isDefaultStorageClass(sc);
+
+    // Default storage class gets highest priority
+    if (isDefault) {
+      score += 150;
+      reasons.push('Default storage class');
+    }
 
     // Check for Ceph replication settings
     const replicaSize = params.replication_size || params.replicaSize || params['pool.replication_size'] || '';
@@ -470,7 +740,7 @@ export default function DiskManagement({
       reasons.push('Retains data on delete');
     }
 
-    return {score, reasons};
+    return {score, reasons, isDefault};
   };
 
   // Sort storage classes by recommendation score
@@ -707,6 +977,32 @@ export default function DiskManagement({
                                     </IconButton>
                                   </Tooltip>
                               )}
+                              {(disk.volume?.dataVolume?.name || disk.volume?.persistentVolumeClaim?.claimName) && isVMMode && (
+                                  <Tooltip title="Migrate to different storage class">
+                                    <IconButton
+                                        size="small"
+                                        color="primary"
+                                        onClick={() => {
+                                          setSelectedDisk(disk);
+                                          setMigrationName(`${disk.volume?.dataVolume?.name || disk.volume?.persistentVolumeClaim?.claimName}-migrated`);
+                                          setMigrateDialogOpen(true);
+                                        }}
+                                    >
+                                      <Icon icon="mdi:swap-horizontal-bold"/>
+                                    </IconButton>
+                                  </Tooltip>
+                              )}
+                              {activeMigrations[disk.name] && (
+                                  <Tooltip title={`Migration: ${activeMigrations[disk.name].status} (${activeMigrations[disk.name].progress || 0}%)`}>
+                                    <Chip
+                                        icon={<Icon icon="mdi:sync" />}
+                                        label={`${activeMigrations[disk.name].progress || 0}%`}
+                                        size="small"
+                                        color="info"
+                                        variant="outlined"
+                                    />
+                                  </Tooltip>
+                              )}
                               {disk.isHotpluggable && isRunning && (
                                   <Tooltip title="Eject disk">
                                     <IconButton
@@ -813,6 +1109,9 @@ export default function DiskManagement({
                                     <Typography variant="subtitle2" fontWeight="bold">
                                       {sc.metadata.name}
                                     </Typography>
+                                    {sc.recommendation.isDefault && (
+                                        <Chip label="Default" size="small" color="primary" />
+                                    )}
                                   </Box>
                                   <Typography variant="caption" color="text.secondary" display="block">
                                     {sc.provisioner}
@@ -1020,6 +1319,210 @@ export default function DiskManagement({
           <Button onClick={() => setResizeDialogOpen(false)} disabled={loading}>Cancel</Button>
           <Button onClick={handleResizeDisk} variant="contained" disabled={loading || !newSize}>
             {loading ? 'Resizing...' : 'Resize'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Storage Migration Dialog */}
+      <Dialog
+        open={migrateDialogOpen}
+        onClose={() => { setMigrateDialogOpen(false); resetMigrationForm(); }}
+        maxWidth={false}
+        PaperProps={{
+          sx: {
+            width: '100%',
+            maxWidth: { xs: '95%', sm: 550, md: 650 },
+            m: { xs: 1, sm: 2 },
+          }
+        }}
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Icon icon="mdi:database-arrow-right" />
+            Migrate Storage
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+            <Alert severity="info">
+              Storage migration creates a copy of your disk on a different storage class.
+              The original disk is preserved until you manually switch the VM to use the new disk.
+            </Alert>
+
+            {/* Source Info */}
+            <Paper variant="outlined" sx={{ p: 2 }}>
+              <Typography variant="subtitle2" gutterBottom>Source Disk</Typography>
+              <Grid container spacing={2}>
+                <Grid item xs={6}>
+                  <Typography variant="caption" color="text.secondary">Name</Typography>
+                  <Typography variant="body2">{selectedDisk?.name}</Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="caption" color="text.secondary">Size</Typography>
+                  <Typography variant="body2">{formatBytes(selectedDisk?.storageSize)}</Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="caption" color="text.secondary">Current Storage Class</Typography>
+                  <Typography variant="body2">{selectedDisk?.storageClassName || 'Unknown'}</Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="caption" color="text.secondary">Source PVC</Typography>
+                  <Typography variant="body2">
+                    {selectedDisk?.volume?.dataVolume?.name || selectedDisk?.volume?.persistentVolumeClaim?.claimName || '-'}
+                  </Typography>
+                </Grid>
+              </Grid>
+            </Paper>
+
+            {/* Target Configuration */}
+            <TextField
+              label="New DataVolume Name"
+              value={migrationName}
+              onChange={(e) => setMigrationName(e.target.value)}
+              fullWidth
+              required
+              helperText="Name for the new DataVolume that will be created"
+            />
+
+            <FormControl fullWidth required>
+              <InputLabel>Target Storage Class</InputLabel>
+              <Select
+                value={targetStorageClass}
+                label="Target Storage Class"
+                onChange={(e) => setTargetStorageClass(e.target.value)}
+              >
+                {recommendedStorageClasses
+                  .filter(sc => sc.metadata.name !== selectedDisk?.storageClassName)
+                  .map(sc => (
+                    <MenuItem key={sc.metadata.name} value={sc.metadata.name}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                        <Typography>{sc.metadata.name}</Typography>
+                        {sc.recommendation.isDefault && (
+                          <Chip label="Default" size="small" color="primary" />
+                        )}
+                        {sc.allowVolumeExpansion && (
+                          <Chip label="Expandable" size="small" color="success" variant="outlined" />
+                        )}
+                        <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
+                          {sc.provisioner.split('/').pop()}
+                        </Typography>
+                      </Box>
+                    </MenuItem>
+                  ))}
+              </Select>
+            </FormControl>
+
+            <FormControl component="fieldset">
+              <Typography variant="subtitle2" gutterBottom>Clone Strategy</Typography>
+              <RadioGroup
+                value={cloneStrategy}
+                onChange={(e) => setCloneStrategy(e.target.value as 'csi-clone' | 'snapshot' | 'copy')}
+              >
+                <FormControlLabel
+                  value="csi-clone"
+                  control={<Radio />}
+                  label={
+                    <Box>
+                      <Typography variant="body2">CSI Clone (Recommended)</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Fast, storage-level cloning using CSI driver capabilities
+                      </Typography>
+                    </Box>
+                  }
+                />
+                <FormControlLabel
+                  value="snapshot"
+                  control={<Radio />}
+                  label={
+                    <Box>
+                      <Typography variant="body2">Snapshot Clone</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Creates a snapshot first, then restores to new storage class
+                      </Typography>
+                    </Box>
+                  }
+                />
+                <FormControlLabel
+                  value="copy"
+                  control={<Radio />}
+                  label={
+                    <Box>
+                      <Typography variant="body2">Host-Assisted Copy</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Slower but most compatible, copies data through a temporary pod
+                      </Typography>
+                    </Box>
+                  }
+                />
+              </RadioGroup>
+            </FormControl>
+
+            {/* Auto-switch option */}
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={autoSwitchDisk}
+                  onChange={(e) => setAutoSwitchDisk(e.target.checked)}
+                  disabled={isRunning}
+                />
+              }
+              label={
+                <Box>
+                  <Typography variant="body2">
+                    Automatically update VM to use new disk after migration
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {isRunning
+                      ? 'Not available while VM is running'
+                      : 'The VM configuration will be updated to point to the new DataVolume'}
+                  </Typography>
+                </Box>
+              }
+            />
+
+            {isRunning && (
+              <Alert severity="warning">
+                The VM is currently running. Stop the VM to enable automatic disk switching
+                and ensure data consistency during migration.
+              </Alert>
+            )}
+
+            {autoSwitchDisk && !isRunning ? (
+              <Alert severity="success" icon={<Icon icon="mdi:check-circle-outline" />}>
+                <Typography variant="body2" gutterBottom><strong>After migration completes:</strong></Typography>
+                <ol style={{ margin: 0, paddingLeft: 20 }}>
+                  <li>VM will be automatically updated to use the new disk</li>
+                  <li>Start the VM and verify it works correctly</li>
+                  <li>Delete the old DataVolume/PVC when no longer needed</li>
+                </ol>
+              </Alert>
+            ) : (
+              <Alert severity="info" icon={<Icon icon="mdi:information-outline" />}>
+                <Typography variant="body2" gutterBottom><strong>After migration completes:</strong></Typography>
+                <ol style={{ margin: 0, paddingLeft: 20 }}>
+                  <li>Stop the VM if running</li>
+                  <li>Edit the VM to replace the disk source with the new DataVolume</li>
+                  <li>Start the VM and verify it works correctly</li>
+                  <li>Delete the old DataVolume/PVC when no longer needed</li>
+                </ol>
+              </Alert>
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => { setMigrateDialogOpen(false); resetMigrationForm(); }}
+            disabled={migrationInProgress}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleMigrateDisk}
+            variant="contained"
+            disabled={migrationInProgress || !targetStorageClass || !migrationName}
+            startIcon={migrationInProgress ? <Icon icon="mdi:loading" className="spin" /> : <Icon icon="mdi:database-arrow-right" />}
+          >
+            {migrationInProgress ? 'Starting Migration...' : 'Start Migration'}
           </Button>
         </DialogActions>
       </Dialog>
