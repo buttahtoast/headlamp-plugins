@@ -6,17 +6,20 @@ export function TenantsList() {
       title="Tenants"
       resourceClass={Tenants}
       columns={[
-        'name',
-        'namespace',
         {
-          id: 'ready',
-          label: 'Ready',
+          id: 'name',
+          label: 'Name',
           render: item => (
             <Link routeName="/capsule/tenants/:name" params={{ name: item.getName() }}>
               {item.getName()}
             </Link>
           ),
-          getValue: item => (item.status?.state ? 'Active' : 'Not Active'),
+          getValue: item => item.getName(),
+        },
+        {
+          id: 'state',
+          label: 'State',
+          getValue: item => (item.status?.state ? item.status.state : 'Unknown'),
         },
       ]}
     ></ResourceListView>

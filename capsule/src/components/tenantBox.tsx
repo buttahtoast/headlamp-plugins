@@ -3,7 +3,7 @@ import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import { useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Tenants } from '../resources/tenants';
 import { NamespaceSetter } from '../utils/namespace'; // Ensure correct import path
 
@@ -17,6 +17,37 @@ export function TenantBox() {
   const isSmall = useMediaQuery(theme.breakpoints.down('sm'));
 
   console.log('Tenants.useList:', { tenants, error });
+
+  // Handlers defined with useCallback before useEffect to avoid stale closures
+  const handleClose = useCallback(() => {
+    setAnchorEl(null);
+    setOpenDialog(false);
+  }, []);
+
+  const handleSelect = useCallback(
+    tenant => {
+      if (tenant && tenant.metadata && tenant.metadata.name) {
+        setSelectedTenant(tenant);
+        localStorage.setItem('selectedTenant', JSON.stringify(tenant));
+        handleClose();
+      } else {
+        console.warn('Attempted to select invalid tenant:', tenant);
+      }
+    },
+    [handleClose]
+  );
+
+  const handleClick = useCallback(
+    event => {
+      console.log('Button clicked', { isSmall, event });
+      if (isSmall) {
+        setOpenDialog(true);
+      } else {
+        setAnchorEl(event.currentTarget);
+      }
+    },
+    [isSmall]
+  );
 
   // Handle side effects
   useEffect(() => {
@@ -45,38 +76,12 @@ export function TenantBox() {
     if (!parsedTenant && tenants && tenants.length > 0) {
       handleSelect(tenants[0]);
     }
-  }, [tenants]);
+  }, [tenants, handleSelect]);
 
   // Early returns after all hooks
   if (error) return <div>Error loading tenants: {error.message || error.toString()}</div>;
   if (!tenants) return <div>Loading...</div>;
   if (tenants.length === 0) return <div>No tenants available</div>;
-
-  // Handlers
-  const handleClick = event => {
-    console.log('Button clicked', { isSmall, event });
-    if (isSmall) {
-      setOpenDialog(true);
-    } else {
-      setAnchorEl(event.currentTargetmillar);
-      setAnchorEl(event.currentTarget);
-    }
-  };
-
-  const handleSelect = tenant => {
-    if (tenant && tenant.metadata && tenant.metadata.name) {
-      setSelectedTenant(tenant);
-      localStorage.setItem('selectedTenant', JSON.stringify(tenant));
-      handleClose();
-    } else {
-      console.warn('Attempted to select invalid tenant:', tenant);
-    }
-  };
-
-  const handleClose = () => {
-    setAnchorEl(null);
-    setOpenDialog(false);
-  };
 
   // Defensive check for currentName
   const currentName =
@@ -86,10 +91,10 @@ export function TenantBox() {
 
   const content = (
     <List>
-      {tenants.map(tenant => (
+      {tenants.map((tenant, index) => (
         <ListItem
           button
-          key={tenant.metadata?.name || `tenant-${Math.random()}`} // Fallback key if name is missing
+          key={tenant.metadata?.name || `tenant-${index}`}
           onClick={() => handleSelect(tenant)}
           selected={
             selectedTenant &&

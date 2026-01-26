@@ -15,6 +15,11 @@ class VirtualMachine extends KubeObject {
     return this.jsonData.status;
   }
 
+  // Get printable status
+  getStatus(): string {
+    return this.status?.printableStatus || 'Unknown';
+  }
+
   async start() {
     this.spec.runStrategy = 'Always';
     return this.update(this.jsonData);
@@ -23,6 +28,20 @@ class VirtualMachine extends KubeObject {
   async stop() {
     this.spec.runStrategy = 'Halted';
     return this.update(this.jsonData);
+  }
+
+  async restart() {
+    // Use KubeVirt's restart subresource API
+    await ApiProxy.request(
+      `/apis/subresources.kubevirt.io/v1/namespaces/${this.getNamespace()}/virtualmachines/${this.getName()}/restart`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({}),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    );
   }
 
   getLastStateChangeTimestamp() {
@@ -35,17 +54,33 @@ class VirtualMachine extends KubeObject {
     onExec: StreamResultsCb,
     options: StreamArgs
   ): { cancel: () => void; getSocket: () => WebSocket } {
-    const instance = new VirtualMachineInstance(this.jsonData);
+    // Build VMI-compatible data using VM's metadata
+    const vmiData = {
+      ...this.jsonData,
+      kind: VirtualMachineInstance.kind,
+      apiVersion: VirtualMachineInstance.apiVersion,
+    };
+    const instance = new VirtualMachineInstance(vmiData);
     return instance.exec(onExec, options);
   }
 
   async pause() {
-    const instance = new VirtualMachineInstance(this.jsonData);
+    const vmiData = {
+      ...this.jsonData,
+      kind: VirtualMachineInstance.kind,
+      apiVersion: VirtualMachineInstance.apiVersion,
+    };
+    const instance = new VirtualMachineInstance(vmiData);
     return instance.pause();
   }
 
   async unpause() {
-    const instance = new VirtualMachineInstance(this.jsonData);
+    const vmiData = {
+      ...this.jsonData,
+      kind: VirtualMachineInstance.kind,
+      apiVersion: VirtualMachineInstance.apiVersion,
+    };
+    const instance = new VirtualMachineInstance(vmiData);
     return instance.unpause();
   }
 
@@ -74,6 +109,31 @@ class VirtualMachine extends KubeObject {
       }
     );
     return migrationName;
+  }
+
+  getVncUrl(): string {
+    const vmiData = {
+      ...this.jsonData,
+      kind: VirtualMachineInstance.kind,
+      apiVersion: VirtualMachineInstance.apiVersion,
+    };
+    const instance = new VirtualMachineInstance(vmiData);
+    // Copy over the cluster name from the parent VM
+    (instance as any)._clusterName = (this as any)._clusterName;
+    return instance.getVncUrl();
+  }
+
+  vnc(
+    onVnc: StreamResultsCb,
+    options: StreamArgs
+  ): { cancel: () => void; getSocket: () => WebSocket } {
+    const vmiData = {
+      ...this.jsonData,
+      kind: VirtualMachineInstance.kind,
+      apiVersion: VirtualMachineInstance.apiVersion,
+    };
+    const instance = new VirtualMachineInstance(vmiData);
+    return instance.vnc(onVnc, options);
   }
 
   static kind = 'VirtualMachine';

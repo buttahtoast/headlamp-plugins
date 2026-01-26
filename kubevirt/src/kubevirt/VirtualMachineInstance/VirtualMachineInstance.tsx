@@ -3,7 +3,7 @@ import { StreamArgs, StreamResultsCb } from '@kinvolk/headlamp-plugin/lib/ApiPro
 import { KubeObject } from '@kinvolk/headlamp-plugin/lib/K8s/cluster';
 
 class VirtualMachineInstance extends KubeObject {
-  constructor(jsonData) {
+  constructor(jsonData: any) {
     super(jsonData);
   }
 
@@ -41,6 +41,29 @@ class VirtualMachineInstance extends KubeObject {
   async unpause() {
     const url = `/apis/subresources.kubevirt.io/v1/namespaces/${this.getNamespace()}/virtualmachineinstances/${this.getName()}/unpause`;
     return ApiProxy.request(url, { method: 'PUT', isJSON: false });
+  }
+
+  getVncUrl(): string {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.host || 'localhost:4466';
+    // Try to get cluster from the object's internal cluster name first
+    const cluster = (this as any)._clusterName || null;
+    const clusterPrefix = cluster ? `/clusters/${cluster}` : '';
+
+    console.log('VNC URL - host:', host, 'cluster:', cluster, 'protocol:', protocol);
+    return `${protocol}//${host}${clusterPrefix}/apis/subresources.kubevirt.io/v1/namespaces/${this.getNamespace()}/virtualmachineinstances/${this.getName()}/vnc`;
+  }
+
+  vnc(
+    onVnc: StreamResultsCb,
+    options: StreamArgs
+  ): { cancel: () => void; getSocket: () => WebSocket } {
+    const url = `/apis/subresources.kubevirt.io/v1/namespaces/${this.getNamespace()}/virtualmachineinstances/${this.getName()}/vnc`;
+    return ApiProxy.stream(url, onVnc, {
+      isJson: false,
+      additionalProtocols: ['base64.binary.k8s.io'],
+      ...options,
+    });
   }
 
   static kind = 'VirtualMachineInstance';

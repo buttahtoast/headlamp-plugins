@@ -3,10 +3,33 @@
 This repository contains various plugins for [Headlamp](https://headlamp.dev/), a Kubernetes web UI. The plugins extend Headlamp's functionality for specific use cases.
 
 ## Available Plugins
-- **KubeVirt**: Adds support for managing KubeVirt resources like Virtual Machines and Instances.
-- **Capsule**: (Placeholder - under development)
-- **SSH Proxy**: (Placeholder - under development)
-- **Web Proxy**: (Placeholder - under development)
+
+### KubeVirt Plugin
+Comprehensive support for managing KubeVirt virtualization resources in Kubernetes.
+
+**Supported Resources:**
+- Virtual Machines (VM) - Create, start, stop, restart, pause, migrate
+- Virtual Machine Instances (VMI) - Monitor running instances with pause/unpause/migrate actions
+- DataVolumes - Storage provisioning with CDI integration
+- VM Snapshots - Create and restore VM snapshots
+- VM Instance Migrations - Live migration monitoring
+- Network Attachment Definitions (NAD) - Multus CNI network management
+- VM Cluster Instance Types - Predefined VM sizes and configurations
+- VM Cluster Preferences - Predefined VM preferences (firmware, devices)
+- Storage Profiles - CDI storage configuration
+
+**Features:**
+- Dashboard with resource overview, allocation stats, and OS distribution
+- VNC Console for graphical VM access (via noVNC)
+- Terminal access to VMs
+- Color-coded status indicators throughout
+- Row-level action buttons (start, stop, restart, pause, migrate, restore)
+
+### Capsule Plugin
+Multi-tenancy support for Capsule-managed Kubernetes clusters. (In development)
+
+### SSH Proxy / Web Proxy
+(Placeholder - under development)
 
 ## Installing Plugins
 

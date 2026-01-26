@@ -85,14 +85,17 @@ export default function Terminal(props: TerminalProps) {
 
   function send(channel: number, data: string) {
     console.debug('Sending data to exec:', data);
-    const socket = execRef.current!.getSocket();
+    if (!execRef.current) {
+      console.debug('Could not send data to exec: execRef not initialized');
+      return;
+    }
+    const socket = execRef.current.getSocket();
 
     if (!socket || socket.readyState !== 1) {
       console.debug('Could not send data to exec: Socket not ready...', socket);
       return;
     }
     const encoded = encoder.encode(data);
-    //const buffer = new Uint8Array([encoded]);
     console.debug('Sending data to exec2:', data);
 
     socket.send(encoded);
@@ -101,8 +104,7 @@ export default function Terminal(props: TerminalProps) {
     console.debug('ondata', xtermc, bytes);
     const xterm = xtermc.xterm;
     // Only show data from stdout, stderr and server error channel.
-    //const channel: Channel = new Int8Array(bytes.slice(0, 1))[0];
-    const channel: Channel = Channel.StdOut;
+    const channel: Channel = new Int8Array(bytes.slice(0, 1))[0];
     if (channel < Channel.StdOut || channel > Channel.ServerError) {
       console.warn('Ignoring channel:', channel);
       return;
@@ -110,16 +112,12 @@ export default function Terminal(props: TerminalProps) {
 
     // The first byte is discarded because it just identifies whether
     // this data is from stderr, stdout, or stdin.
-    const text = decoder.decode(bytes);
+    const text = decoder.decode(bytes.slice(1));
     if (!xtermc.connected) {
       xtermc.connected = true;
       xterm.writeln(t('Connected to terminal…'));
     }
-    //console.log('isSuccessfulExitError', isSuccessfulExitError(channel, text));
-    console.log('isSuccessful');
 
-    console.log('write');
-    console.log(bytes);
     xterm.write(text);
   }
   useEffect(
@@ -198,7 +196,7 @@ export default function Terminal(props: TerminalProps) {
         }, 1);
       }}
       withFullScreen
-      title={t('Terminal: {{ itemName }}', { itemName: item.getName() })}
+      title={`Terminal: ${item.getName()}`}
       {...other}
     >
       <DialogContent
