@@ -1,8 +1,9 @@
 import { ApiProxy } from '@kinvolk/headlamp-plugin/lib';
-import { Link, SectionBox, SimpleTable } from '@kinvolk/headlamp-plugin/lib/components/common';
+import { Link, SectionBox } from '@kinvolk/headlamp-plugin/lib/components/common';
 import {
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   Dialog,
@@ -11,12 +12,23 @@ import {
   DialogTitle,
   FormControl,
   FormControlLabel,
+  IconButton,
+  InputAdornment,
   InputLabel,
+  Menu,
   MenuItem,
   Paper,
   Select,
   Switch,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  TableSortLabel,
   TextField,
+  Toolbar,
   Tooltip,
   Typography,
 } from '@mui/material';
@@ -55,12 +67,57 @@ interface VeleroSchedule {
   };
 }
 
+type SortDirection = 'asc' | 'desc';
+type SortField = 'name' | 'namespace' | 'vm' | 'schedule' | 'lastBackup' | 'retention' | 'created';
+
+interface ColumnDef {
+  id: SortField;
+  label: string;
+  minWidth: number;
+  sortable: boolean;
+  filterable: boolean;
+}
+
+const ALL_COLUMNS: ColumnDef[] = [
+  { id: 'name', label: 'Name', minWidth: 280, sortable: true, filterable: true },
+  { id: 'namespace', label: 'VM Namespace', minWidth: 120, sortable: true, filterable: true },
+  { id: 'vm', label: 'VM', minWidth: 120, sortable: true, filterable: true },
+  { id: 'schedule', label: 'Schedule', minWidth: 180, sortable: true, filterable: true },
+  { id: 'lastBackup', label: 'Last Backup', minWidth: 150, sortable: true, filterable: false },
+  { id: 'retention', label: 'Retention', minWidth: 100, sortable: true, filterable: false },
+  { id: 'created', label: 'Created', minWidth: 150, sortable: true, filterable: false },
+];
+
 export default function ScheduleList() {
   const { enqueueSnackbar } = useSnackbar();
   const [schedules, setSchedules] = useState<VeleroSchedule[]>([]);
   const [loading, setLoading] = useState(true);
   const [veleroInstalled, setVeleroInstalled] = useState(true);
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+
+  // Selection state
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  // Sort state
+  const [sortField, setSortField] = useState<SortField>('created');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+
+  // Filter state
+  const [filters, setFilters] = useState<Record<string, string>>({
+    name: '',
+    namespace: '',
+    vm: '',
+    schedule: '',
+  });
+
+  // Search and display state
+  const [showSearch, setShowSearch] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [visibleColumns, setVisibleColumns] = useState<Set<SortField>>(
+    new Set(ALL_COLUMNS.map(c => c.id))
+  );
+  const [columnMenuAnchor, setColumnMenuAnchor] = useState<null | HTMLElement>(null);
 
   // Form state
   const [scheduleName, setScheduleName] = useState('');
@@ -78,13 +135,7 @@ export default function ScheduleList() {
   const fetchSchedules = useCallback(async () => {
     try {
       const response = await ApiProxy.request('/apis/velero.io/v1/schedules') as { items: VeleroSchedule[] };
-      // Sort by creation timestamp, latest first
-      const sorted = (response.items || []).sort((a, b) => {
-        const dateA = new Date(a.metadata.creationTimestamp);
-        const dateB = new Date(b.metadata.creationTimestamp);
-        return dateB.getTime() - dateA.getTime();
-      });
-      setSchedules(sorted);
+      setSchedules(response.items || []);
       setVeleroInstalled(true);
       setLoading(false);
     } catch (error: any) {
@@ -115,14 +166,12 @@ export default function ScheduleList() {
   }, [vms, selectedNamespace]);
 
   // Create schedule for KubeVirt VMs
-  // The kubevirt-velero-plugin automatically includes associated DataVolumes/PVCs
   const handleCreateSchedule = async () => {
     if (!scheduleName || !selectedNamespace || !scheduleExpression) {
       enqueueSnackbar('Please fill required fields', { variant: 'warning' });
       return;
     }
 
-    // Build template spec matching the velero CLI format that works with kubevirt-velero-plugin
     const template: any = {
       includedNamespaces: [selectedNamespace],
       resourcePolicies: {
@@ -133,7 +182,6 @@ export default function ScheduleList() {
       ttl: ttl,
     };
 
-    // Only add snapshot options if enabled
     if (snapshotVolumes) {
       template.snapshotVolumes = true;
       if (snapshotMoveData) {
@@ -143,7 +191,6 @@ export default function ScheduleList() {
       template.snapshotVolumes = false;
     }
 
-    // When backing up a specific VM, use label selector with kubevirt.io/vm label
     if (selectedVM) {
       template.labelSelector = {
         matchLabels: {
@@ -186,18 +233,33 @@ export default function ScheduleList() {
     }
   };
 
-  // Delete schedule
-  const handleDeleteSchedule = async (schedule: VeleroSchedule) => {
-    try {
-      await ApiProxy.request(
-        `/apis/velero.io/v1/namespaces/${schedule.metadata.namespace}/schedules/${schedule.metadata.name}`,
-        { method: 'DELETE' }
-      );
-      enqueueSnackbar('Schedule deleted successfully', { variant: 'success' });
-      fetchSchedules();
-    } catch (error: any) {
-      enqueueSnackbar(`Failed to delete schedule: ${error.message}`, { variant: 'error' });
+  // Delete selected schedules
+  const handleDeleteSelected = async () => {
+    const selectedSchedules = schedules.filter(s => selected.has(s.metadata.name));
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const schedule of selectedSchedules) {
+      try {
+        await ApiProxy.request(
+          `/apis/velero.io/v1/namespaces/${schedule.metadata.namespace}/schedules/${schedule.metadata.name}`,
+          { method: 'DELETE' }
+        );
+        successCount++;
+      } catch {
+        errorCount++;
+      }
     }
+
+    if (successCount > 0) {
+      enqueueSnackbar(`${successCount} schedule(s) deleted`, { variant: 'success' });
+    }
+    if (errorCount > 0) {
+      enqueueSnackbar(`Failed to delete ${errorCount} schedule(s)`, { variant: 'error' });
+    }
+
+    setSelected(new Set());
+    fetchSchedules();
   };
 
   const resetForm = () => {
@@ -233,19 +295,16 @@ export default function ScheduleList() {
 
     const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
 
-    // Daily at specific time
     if (dayOfMonth === '*' && month === '*' && dayOfWeek === '*') {
       return `Daily at ${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`;
     }
 
-    // Weekly
     if (dayOfMonth === '*' && month === '*' && dayOfWeek !== '*') {
       const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
       const day = days[parseInt(dayOfWeek)] || dayOfWeek;
       return `Weekly on ${day} at ${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`;
     }
 
-    // Monthly
     if (dayOfMonth !== '*' && month === '*') {
       return `Monthly on day ${dayOfMonth} at ${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`;
     }
@@ -261,6 +320,139 @@ export default function ScheduleList() {
     if (ttlValue === '8760h') return '1 year';
     return ttlValue || '-';
   };
+
+  // Sort and filter schedules
+  const processedSchedules = useMemo(() => {
+    let result = [...schedules];
+
+    // Apply global search
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(s => {
+        const name = s.metadata.name.toLowerCase();
+        const ns = getScheduleNamespace(s).toLowerCase();
+        const vm = (getVMName(s) || 'all vms').toLowerCase();
+        const sched = parseCronExpression(s.spec.schedule).toLowerCase();
+        return name.includes(query) || ns.includes(query) || vm.includes(query) || sched.includes(query);
+      });
+    }
+
+    // Apply column filters
+    if (filters.name) {
+      result = result.filter(s => s.metadata.name.toLowerCase().includes(filters.name.toLowerCase()));
+    }
+    if (filters.namespace) {
+      result = result.filter(s => getScheduleNamespace(s).toLowerCase().includes(filters.namespace.toLowerCase()));
+    }
+    if (filters.vm) {
+      result = result.filter(s => {
+        const vmName = getVMName(s) || 'All VMs';
+        return vmName.toLowerCase().includes(filters.vm.toLowerCase());
+      });
+    }
+    if (filters.schedule) {
+      result = result.filter(s => {
+        const readable = parseCronExpression(s.spec.schedule);
+        return readable.toLowerCase().includes(filters.schedule.toLowerCase()) ||
+               s.spec.schedule.toLowerCase().includes(filters.schedule.toLowerCase());
+      });
+    }
+
+    // Apply sorting
+    result.sort((a, b) => {
+      let aVal: any, bVal: any;
+      switch (sortField) {
+        case 'name':
+          aVal = a.metadata.name;
+          bVal = b.metadata.name;
+          break;
+        case 'namespace':
+          aVal = getScheduleNamespace(a);
+          bVal = getScheduleNamespace(b);
+          break;
+        case 'vm':
+          aVal = getVMName(a) || 'All VMs';
+          bVal = getVMName(b) || 'All VMs';
+          break;
+        case 'schedule':
+          aVal = a.spec.schedule;
+          bVal = b.spec.schedule;
+          break;
+        case 'lastBackup':
+          aVal = a.status?.lastBackup ? new Date(a.status.lastBackup).getTime() : 0;
+          bVal = b.status?.lastBackup ? new Date(b.status.lastBackup).getTime() : 0;
+          break;
+        case 'retention':
+          aVal = a.spec.template?.ttl || '';
+          bVal = b.spec.template?.ttl || '';
+          break;
+        case 'created':
+          aVal = new Date(a.metadata.creationTimestamp).getTime();
+          bVal = new Date(b.metadata.creationTimestamp).getTime();
+          break;
+        default:
+          aVal = a.metadata.name;
+          bVal = b.metadata.name;
+      }
+
+      if (typeof aVal === 'string') {
+        return sortDirection === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+      }
+      return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+    });
+
+    return result;
+  }, [schedules, filters, sortField, sortDirection, searchQuery]);
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const handleSelectAll = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.checked) {
+      setSelected(new Set(processedSchedules.map(s => s.metadata.name)));
+    } else {
+      setSelected(new Set());
+    }
+  };
+
+  const handleSelectOne = (name: string) => {
+    const newSelected = new Set(selected);
+    if (newSelected.has(name)) {
+      newSelected.delete(name);
+    } else {
+      newSelected.add(name);
+    }
+    setSelected(newSelected);
+  };
+
+  const handleToggleColumn = (columnId: SortField) => {
+    const newVisible = new Set(visibleColumns);
+    if (newVisible.has(columnId)) {
+      newVisible.delete(columnId);
+    } else {
+      newVisible.add(columnId);
+    }
+    setVisibleColumns(newVisible);
+  };
+
+  const formatDateTime = (dateStr?: string): string => {
+    if (!dateStr) return 'Never';
+    const date = new Date(dateStr);
+    return date.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const visibleColumnDefs = ALL_COLUMNS.filter(c => visibleColumns.has(c.id));
 
   if (loading) {
     return (
@@ -304,84 +496,236 @@ export default function ScheduleList() {
           ],
         }}
       >
-        <SimpleTable
-          columns={[
-            {
-              label: 'Name',
-              getter: (schedule: VeleroSchedule) => schedule.metadata.name,
-            },
-            {
-              label: 'VM Namespace',
-              getter: (schedule: VeleroSchedule) => {
-                const ns = getScheduleNamespace(schedule);
-                return ns ? (
-                  <Link routeName="namespace" params={{ name: ns }}>
-                    {ns}
-                  </Link>
-                ) : '-';
-              },
-            },
-            {
-              label: 'VM',
-              getter: (schedule: VeleroSchedule) => {
-                const vmName = getVMName(schedule);
-                const vmNamespace = getScheduleNamespace(schedule);
-                return vmName ? (
-                  <Link
-                    routeName="virtualmachine"
-                    params={{ name: vmName, namespace: vmNamespace }}
-                  >
-                    {vmName}
-                  </Link>
-                ) : 'All VMs';
-              },
-            },
-            {
-              label: 'Schedule',
-              getter: (schedule: VeleroSchedule) => (
-                <Tooltip title={schedule.spec.schedule}>
-                  <Chip
-                    icon={<Icon icon="mdi:clock-outline" />}
-                    label={parseCronExpression(schedule.spec.schedule)}
-                    size="small"
-                    variant="outlined"
+        {/* Controls Toolbar */}
+        <Toolbar
+          variant="dense"
+          disableGutters
+          sx={{ mb: 1, gap: 1, minHeight: 'auto', flexWrap: 'wrap' }}
+        >
+          {selected.size > 0 && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography variant="body2" color="text.secondary">
+                {selected.size} selected
+              </Typography>
+              <Button
+                variant="contained"
+                color="error"
+                size="small"
+                startIcon={<Icon icon="mdi:delete" />}
+                onClick={handleDeleteSelected}
+                sx={{ whiteSpace: 'nowrap' }}
+              >
+                Delete Selected
+              </Button>
+            </Box>
+          )}
+
+          <Box sx={{ flexGrow: 1 }} />
+
+          {showSearch && (
+            <TextField
+              size="small"
+              placeholder="Search all columns..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              sx={{ minWidth: 250 }}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Icon icon="mdi:magnify" width={18} />
+                  </InputAdornment>
+                ),
+                endAdornment: searchQuery && (
+                  <InputAdornment position="end">
+                    <IconButton size="small" onClick={() => setSearchQuery('')}>
+                      <Icon icon="mdi:close" width={16} />
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
+            />
+          )}
+
+          <Tooltip title={showSearch ? 'Hide search' : 'Show search'}>
+            <IconButton
+              onClick={() => setShowSearch(!showSearch)}
+              color={showSearch ? 'primary' : 'default'}
+            >
+              <Icon icon="mdi:magnify" width={24} />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title={showFilters ? 'Hide filters' : 'Show filters'}>
+            <IconButton
+              onClick={() => setShowFilters(!showFilters)}
+              color={showFilters ? 'primary' : 'default'}
+            >
+              <Icon icon="mdi:filter-variant" width={24} />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Manage columns">
+            <IconButton onClick={(e) => setColumnMenuAnchor(e.currentTarget)}>
+              <Icon icon="mdi:view-column" width={24} />
+            </IconButton>
+          </Tooltip>
+        </Toolbar>
+
+        {/* Column Menu */}
+        <Menu
+          anchorEl={columnMenuAnchor}
+          open={Boolean(columnMenuAnchor)}
+          onClose={() => setColumnMenuAnchor(null)}
+        >
+          <MenuItem disabled>
+            <Typography variant="subtitle2">Show/Hide Columns</Typography>
+          </MenuItem>
+          {ALL_COLUMNS.map((col) => (
+            <MenuItem key={col.id} onClick={() => handleToggleColumn(col.id)}>
+              <Checkbox checked={visibleColumns.has(col.id)} size="small" />
+              <Typography variant="body2">{col.label}</Typography>
+            </MenuItem>
+          ))}
+        </Menu>
+
+        <TableContainer component={Paper} variant="outlined">
+          <Table size="small">
+            <TableHead>
+              {/* Filter row */}
+              {showFilters && (
+                <TableRow>
+                  <TableCell padding="checkbox" />
+                  {visibleColumnDefs.map((col) => (
+                    <TableCell key={col.id} sx={{ minWidth: col.minWidth }}>
+                      {col.filterable ? (
+                        <TextField
+                          size="small"
+                          placeholder={`Filter ${col.label.toLowerCase()}...`}
+                          value={filters[col.id] || ''}
+                          onChange={(e) => setFilters({ ...filters, [col.id]: e.target.value })}
+                          fullWidth
+                        />
+                      ) : null}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              )}
+              {/* Header row */}
+              <TableRow>
+                <TableCell padding="checkbox">
+                  <Checkbox
+                    indeterminate={selected.size > 0 && selected.size < processedSchedules.length}
+                    checked={processedSchedules.length > 0 && selected.size === processedSchedules.length}
+                    onChange={handleSelectAll}
                   />
-                </Tooltip>
-              ),
-            },
-            {
-              label: 'Last Backup',
-              getter: (schedule: VeleroSchedule) =>
-                schedule.status?.lastBackup
-                  ? new Date(schedule.status.lastBackup).toLocaleString()
-                  : 'Never',
-            },
-            {
-              label: 'Retention',
-              getter: (schedule: VeleroSchedule) => formatTTL(schedule.spec.template?.ttl || ''),
-            },
-            {
-              label: 'Created',
-              getter: (schedule: VeleroSchedule) =>
-                new Date(schedule.metadata.creationTimestamp).toLocaleDateString(),
-            },
-            {
-              label: 'Actions',
-              getter: (schedule: VeleroSchedule) => (
-                <Button
-                  size="small"
-                  color="error"
-                  onClick={() => handleDeleteSchedule(schedule)}
-                  startIcon={<Icon icon="mdi:delete" />}
-                >
-                  Delete
-                </Button>
-              ),
-            },
-          ]}
-          data={schedules}
-          emptyMessage="No backup schedules found"
-        />
+                </TableCell>
+                {visibleColumnDefs.map((col) => (
+                  <TableCell
+                    key={col.id}
+                    sx={{ minWidth: col.minWidth, fontWeight: 'bold', whiteSpace: 'nowrap' }}
+                  >
+                    {col.sortable ? (
+                      <TableSortLabel
+                        active={sortField === col.id}
+                        direction={sortField === col.id ? sortDirection : 'asc'}
+                        onClick={() => handleSort(col.id)}
+                      >
+                        {col.label}
+                      </TableSortLabel>
+                    ) : (
+                      col.label
+                    )}
+                  </TableCell>
+                ))}
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {processedSchedules.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={visibleColumnDefs.length + 1} align="center" sx={{ py: 4 }}>
+                    <Typography color="text.secondary">No backup schedules found</Typography>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                processedSchedules.map((schedule) => (
+                  <TableRow
+                    key={schedule.metadata.name}
+                    hover
+                    selected={selected.has(schedule.metadata.name)}
+                  >
+                    <TableCell padding="checkbox">
+                      <Checkbox
+                        checked={selected.has(schedule.metadata.name)}
+                        onChange={() => handleSelectOne(schedule.metadata.name)}
+                      />
+                    </TableCell>
+                    {visibleColumns.has('name') && (
+                      <TableCell>
+                        <Link
+                          routeName="schedule"
+                          params={{ name: schedule.metadata.name }}
+                        >
+                          {schedule.metadata.name}
+                        </Link>
+                      </TableCell>
+                    )}
+                    {visibleColumns.has('namespace') && (
+                      <TableCell>
+                        {(() => {
+                          const ns = getScheduleNamespace(schedule);
+                          return ns ? (
+                            <Link routeName="namespace" params={{ name: ns }}>
+                              {ns}
+                            </Link>
+                          ) : '-';
+                        })()}
+                      </TableCell>
+                    )}
+                    {visibleColumns.has('vm') && (
+                      <TableCell>
+                        {(() => {
+                          const vmName = getVMName(schedule);
+                          const vmNamespace = getScheduleNamespace(schedule);
+                          return vmName ? (
+                            <Link
+                              routeName="virtualmachine"
+                              params={{ name: vmName, namespace: vmNamespace }}
+                            >
+                              {vmName}
+                            </Link>
+                          ) : 'All VMs';
+                        })()}
+                      </TableCell>
+                    )}
+                    {visibleColumns.has('schedule') && (
+                      <TableCell>
+                        <Tooltip title={schedule.spec.schedule}>
+                          <Chip
+                            icon={<Icon icon="mdi:clock-outline" />}
+                            label={parseCronExpression(schedule.spec.schedule)}
+                            size="small"
+                            variant="outlined"
+                          />
+                        </Tooltip>
+                      </TableCell>
+                    )}
+                    {visibleColumns.has('lastBackup') && (
+                      <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                        {formatDateTime(schedule.status?.lastBackup)}
+                      </TableCell>
+                    )}
+                    {visibleColumns.has('retention') && (
+                      <TableCell>{formatTTL(schedule.spec.template?.ttl || '')}</TableCell>
+                    )}
+                    {visibleColumns.has('created') && (
+                      <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                        {formatDateTime(schedule.metadata.creationTimestamp)}
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
       </SectionBox>
 
       {/* Create Schedule Dialog */}

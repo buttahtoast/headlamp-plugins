@@ -305,10 +305,11 @@ export default function BackupDetails() {
             Restore
           </Button>
           <Button
-            variant="outlined"
+            variant="contained"
             color="error"
             startIcon={<Icon icon="mdi:delete" />}
             onClick={() => setDeleteDialogOpen(true)}
+            sx={{ whiteSpace: 'nowrap' }}
           >
             Delete
           </Button>

@@ -26,7 +26,9 @@ import NodeMaintenanceList from './kubevirt/NodeMaintenance/NodeMaintenanceList'
 import BackupList from './kubevirt/Backup/BackupList';
 import BackupDetails from './kubevirt/Backup/BackupDetails';
 import ScheduleList from './kubevirt/Backup/ScheduleList';
+import ScheduleDetails from './kubevirt/Backup/ScheduleDetails';
 import RestoreList from './kubevirt/Backup/RestoreList';
+import RestoreDetails from './kubevirt/Backup/RestoreDetails';
 import VMMetrics from './kubevirt/Monitoring/VMMetrics';
 
 // Parent sidebar entry
@@ -426,6 +428,17 @@ registerRoute({
   name: 'backup-schedules',
 });
 
+// Schedule details route
+registerRoute({
+  path: '/kubevirt/dr/schedules/:name',
+  parent: 'kubevirt',
+  sidebar: 'backup-schedules',
+  component: () => <ScheduleDetails />,
+  exact: true,
+  name: 'schedule',
+  params: ['name'],
+});
+
 // Restores route
 registerRoute({
   path: '/kubevirt/dr/restores/',
@@ -434,6 +447,17 @@ registerRoute({
   component: () => <RestoreList />,
   exact: true,
   name: 'backup-restores',
+});
+
+// Restore details route
+registerRoute({
+  path: '/kubevirt/dr/restores/:name',
+  parent: 'kubevirt',
+  sidebar: 'backup-restores',
+  component: () => <RestoreDetails />,
+  exact: true,
+  name: 'restore',
+  params: ['name'],
 });
 
 // Monitoring route
