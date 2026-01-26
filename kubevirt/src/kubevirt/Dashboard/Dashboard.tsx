@@ -1,3 +1,4 @@
+import ApiProxy from '@kinvolk/headlamp-plugin/lib/ApiProxy';
 import { Link, SectionBox } from '@kinvolk/headlamp-plugin/lib/components/common';
 import {
   Box,
@@ -5,19 +6,13 @@ import {
   CardContent,
   Chip,
   CircularProgress,
-  Divider,
   Grid,
-  LinearProgress,
   Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
-  Tooltip,
   Typography,
 } from '@mui/material';
-import { useMemo } from 'react';
+import { Icon } from '@iconify/react';
+import { useEffect, useMemo, useState } from 'react';
+import { useKubeVirtInstalled, KubeVirtNotInstalled, KubeVirtCheckLoading, formatBytes } from '../utils/kubeVirtCheck';
 import { useTranslation } from 'react-i18next';
 import DataVolume from '../DataVolume/DataVolume';
 import NetworkAttachmentDefinition from '../NetworkAttachmentDefinition/NetworkAttachmentDefinition';
@@ -107,32 +102,6 @@ function ResourceCard({ title, items, loading }: ResourceCardProps) {
   );
 }
 
-interface StatusBreakdownProps {
-  title: string;
-  items: { label: string; count: number; color: 'success' | 'warning' | 'error' | 'info' | 'default' }[];
-}
-
-function StatusBreakdown({ title, items }: StatusBreakdownProps) {
-  return (
-    <Paper variant="outlined" sx={{ p: 2 }}>
-      <Typography variant="subtitle2" gutterBottom>
-        {title}
-      </Typography>
-      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-        {items.map((item, idx) => (
-          <Chip
-            key={idx}
-            label={`${item.label}: ${item.count}`}
-            size="small"
-            color={item.color}
-            variant="outlined"
-          />
-        ))}
-      </Box>
-    </Paper>
-  );
-}
-
 // Helper to parse memory string to bytes
 function parseMemory(memStr: string): number {
   if (!memStr) return 0;
@@ -157,32 +126,370 @@ function parseMemory(memStr: string): number {
   return value * (multipliers[unit] || 1);
 }
 
-// Helper to format bytes to human readable
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'Ki', 'Mi', 'Gi', 'Ti', 'Pi'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+// Format relative time
+function formatRelativeTime(timestamp: string): string {
+  if (!timestamp) return '';
+  const now = new Date();
+  const date = new Date(timestamp);
+  const diffMs = now.getTime() - date.getTime();
+  const diffSec = Math.floor(diffMs / 1000);
+  const diffMin = Math.floor(diffSec / 60);
+  const diffHour = Math.floor(diffMin / 60);
+  const diffDay = Math.floor(diffHour / 24);
+
+  if (diffDay > 0) return `${diffDay}d ago`;
+  if (diffHour > 0) return `${diffHour}h ago`;
+  if (diffMin > 0) return `${diffMin}m ago`;
+  return `${diffSec}s ago`;
 }
 
-// Helper to get OS icon
-function getOSIcon(osName: string): string {
-  const lowerName = osName.toLowerCase();
-  if (lowerName.includes('windows')) return '🪟';
-  if (lowerName.includes('ubuntu')) return '🟠';
-  if (lowerName.includes('debian')) return '🔴';
-  if (lowerName.includes('fedora')) return '🔵';
-  if (lowerName.includes('centos') || lowerName.includes('rhel') || lowerName.includes('red hat')) return '🎩';
-  if (lowerName.includes('suse') || lowerName.includes('sles')) return '🦎';
-  if (lowerName.includes('arch')) return '🔷';
-  if (lowerName.includes('alpine')) return '🏔️';
-  if (lowerName.includes('linux')) return '🐧';
-  return '💻';
+// ============ HEALTH SUMMARY CARD ============
+interface HealthSummaryCardProps {
+  vms: VirtualMachine[] | null;
+  loading: boolean;
+}
+
+function HealthSummaryCard({ vms, loading }: HealthSummaryCardProps) {
+  const { t } = useTranslation('glossary');
+
+  const stats = useMemo(() => {
+    if (!vms) return { running: 0, stopped: 0, failed: 0, paused: 0, other: 0 };
+    return {
+      running: vms.filter(vm => vm.getStatus() === 'Running').length,
+      stopped: vms.filter(vm => vm.getStatus() === 'Stopped').length,
+      failed: vms.filter(vm => ['CrashLoopBackOff', 'ErrorUnschedulable', 'DataVolumeError', 'Failed'].includes(vm.getStatus())).length,
+      paused: vms.filter(vm => vm.getStatus() === 'Paused').length,
+      other: vms.filter(vm => !['Running', 'Stopped', 'CrashLoopBackOff', 'ErrorUnschedulable', 'DataVolumeError', 'Failed', 'Paused'].includes(vm.getStatus())).length,
+    };
+  }, [vms]);
+
+  const healthItems = [
+    { status: 'Running', count: stats.running, color: 'success.main', icon: 'mdi:play-circle', bgColor: 'success.lighter' },
+    { status: 'Stopped', count: stats.stopped, color: 'text.secondary', icon: 'mdi:stop-circle', bgColor: 'grey.100' },
+    { status: 'Failed', count: stats.failed, color: 'error.main', icon: 'mdi:alert-circle', bgColor: 'error.lighter' },
+    { status: 'Paused', count: stats.paused, color: 'warning.main', icon: 'mdi:pause-circle', bgColor: 'warning.lighter' },
+  ];
+
+  return (
+    <Card variant="outlined" sx={{ height: '100%' }}>
+      <CardContent>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+          <Typography variant="subtitle1" fontWeight="bold">
+            {t('VM Health Summary')}
+          </Typography>
+          <Chip
+            label={`${vms?.length || 0} total`}
+            size="small"
+            color="primary"
+            variant="outlined"
+          />
+        </Box>
+        {loading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+            <CircularProgress size={32} />
+          </Box>
+        ) : (
+          <Grid container spacing={2}>
+            {healthItems.map((item) => (
+              <Grid item xs={6} sm={3} key={item.status}>
+                <Link
+                  routeName="virtualmachines"
+                  style={{ textDecoration: 'none' }}
+                >
+                  <Paper
+                    variant="outlined"
+                    sx={{
+                      p: 2,
+                      textAlign: 'center',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      '&:hover': {
+                        boxShadow: 2,
+                        transform: 'translateY(-2px)',
+                      },
+                    }}
+                  >
+                    <Icon icon={item.icon} width={28} height={28} color={item.color.replace('.main', '')} />
+                    <Typography variant="h4" sx={{ color: item.color, mt: 1 }}>
+                      {item.count}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {item.status}
+                    </Typography>
+                  </Paper>
+                </Link>
+              </Grid>
+            ))}
+          </Grid>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ============ VM EVENTS PANEL ============
+interface VMEvent {
+  type: string;
+  reason: string;
+  message: string;
+  lastTimestamp: string;
+  involvedObject: {
+    kind: string;
+    name: string;
+    namespace: string;
+  };
+}
+
+function VMEventsPanel() {
+  const { t } = useTranslation('glossary');
+  const [events, setEvents] = useState<VMEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filterType, setFilterType] = useState<'all' | 'Warning' | 'Normal'>('all');
+
+  useEffect(() => {
+    const fetchEvents = async () => {
+      try {
+        // Fetch events for VirtualMachine and VirtualMachineInstance kinds
+        const response = await ApiProxy.request('/api/v1/events?limit=100') as { items: VMEvent[] };
+        const vmEvents = response.items?.filter((event: VMEvent) =>
+          ['VirtualMachine', 'VirtualMachineInstance', 'VirtualMachineInstanceMigration'].includes(event.involvedObject?.kind || '')
+        ) || [];
+
+        // Sort by timestamp descending
+        vmEvents.sort((a: VMEvent, b: VMEvent) => {
+          const dateA = new Date(a.lastTimestamp || 0);
+          const dateB = new Date(b.lastTimestamp || 0);
+          return dateB.getTime() - dateA.getTime();
+        });
+
+        setEvents(vmEvents.slice(0, 20));
+        setLoading(false);
+      } catch (error) {
+        console.error('Failed to fetch events:', error);
+        setLoading(false);
+      }
+    };
+
+    fetchEvents();
+    const interval = setInterval(fetchEvents, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const filteredEvents = useMemo(() => {
+    if (filterType === 'all') return events;
+    return events.filter(e => e.type === filterType);
+  }, [events, filterType]);
+
+  return (
+    <Card variant="outlined" sx={{ height: '100%' }}>
+      <CardContent>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+          <Typography variant="subtitle1" fontWeight="bold">
+            {t('Recent VM Events')}
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 0.5 }}>
+            <Chip
+              label="All"
+              size="small"
+              variant={filterType === 'all' ? 'filled' : 'outlined'}
+              onClick={() => setFilterType('all')}
+              sx={{ cursor: 'pointer' }}
+            />
+            <Chip
+              label="Warning"
+              size="small"
+              color="warning"
+              variant={filterType === 'Warning' ? 'filled' : 'outlined'}
+              onClick={() => setFilterType('Warning')}
+              sx={{ cursor: 'pointer' }}
+            />
+            <Chip
+              label="Normal"
+              size="small"
+              color="success"
+              variant={filterType === 'Normal' ? 'filled' : 'outlined'}
+              onClick={() => setFilterType('Normal')}
+              sx={{ cursor: 'pointer' }}
+            />
+          </Box>
+        </Box>
+        {loading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+            <CircularProgress size={32} />
+          </Box>
+        ) : filteredEvents.length === 0 ? (
+          <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 3 }}>
+            No VM events found
+          </Typography>
+        ) : (
+          <Box sx={{ maxHeight: 300, overflow: 'auto' }}>
+            {filteredEvents.slice(0, 10).map((event, idx) => (
+              <Box
+                key={idx}
+                sx={{
+                  display: 'flex',
+                  gap: 1.5,
+                  py: 1,
+                  borderBottom: idx < filteredEvents.length - 1 ? '1px solid' : 'none',
+                  borderColor: 'divider',
+                }}
+              >
+                <Icon
+                  icon={event.type === 'Warning' ? 'mdi:alert' : 'mdi:information'}
+                  width={20}
+                  color={event.type === 'Warning' ? '#ed6c02' : '#0288d1'}
+                />
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                    <Typography variant="body2" fontWeight="medium" noWrap>
+                      {event.reason}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {formatRelativeTime(event.lastTimestamp)}
+                    </Typography>
+                  </Box>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }} noWrap>
+                    {event.involvedObject?.name} ({event.involvedObject?.kind})
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }} noWrap>
+                    {event.message}
+                  </Typography>
+                </Box>
+              </Box>
+            ))}
+          </Box>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ============ MIGRATION TIMELINE ============
+interface MigrationTimelineProps {
+  migrations: VirtualMachineInstanceMigration[] | null;
+  loading: boolean;
+}
+
+function MigrationTimeline({ migrations, loading }: MigrationTimelineProps) {
+  const { t } = useTranslation('glossary');
+
+  const recentMigrations = useMemo(() => {
+    if (!migrations) return [];
+    return [...migrations]
+      .sort((a, b) => {
+        const dateA = new Date(a.jsonData?.metadata?.creationTimestamp || 0);
+        const dateB = new Date(b.jsonData?.metadata?.creationTimestamp || 0);
+        return dateB.getTime() - dateA.getTime();
+      })
+      .slice(0, 8);
+  }, [migrations]);
+
+  const getStatusIcon = (migration: VirtualMachineInstanceMigration) => {
+    if (migration.isCompleted()) return { icon: 'mdi:check-circle', color: '#2e7d32' };
+    if (migration.isFailed()) return { icon: 'mdi:close-circle', color: '#d32f2f' };
+    return { icon: 'mdi:progress-clock', color: '#ed6c02' };
+  };
+
+  return (
+    <Card variant="outlined" sx={{ height: '100%' }}>
+      <CardContent>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+          <Typography variant="subtitle1" fontWeight="bold">
+            {t('Migration Activity')}
+          </Typography>
+          <Link routeName="virtualmachineinstancemigrations" style={{ textDecoration: 'none' }}>
+            <Typography variant="caption" color="primary">
+              View All
+            </Typography>
+          </Link>
+        </Box>
+        {loading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+            <CircularProgress size={32} />
+          </Box>
+        ) : recentMigrations.length === 0 ? (
+          <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 3 }}>
+            No migrations found
+          </Typography>
+        ) : (
+          <Box sx={{ maxHeight: 300, overflow: 'auto' }}>
+            {recentMigrations.map((migration, idx) => {
+              const status = getStatusIcon(migration);
+              const sourceNode = migration.jsonData?.status?.migrationState?.sourceNode || 'Unknown';
+              const targetNode = migration.jsonData?.status?.migrationState?.targetNode || 'Pending';
+              const startTime = migration.jsonData?.status?.migrationState?.startTimestamp;
+              const endTime = migration.jsonData?.status?.migrationState?.endTimestamp;
+
+              let duration = '';
+              if (startTime && endTime) {
+                const durationMs = new Date(endTime).getTime() - new Date(startTime).getTime();
+                duration = `${Math.round(durationMs / 1000)}s`;
+              }
+
+              return (
+                <Box
+                  key={migration.getName()}
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 2,
+                    py: 1.5,
+                    borderLeft: '2px solid',
+                    borderColor: status.color,
+                    pl: 2,
+                    ml: 1,
+                    mb: idx < recentMigrations.length - 1 ? 1 : 0,
+                  }}
+                >
+                  <Icon icon={status.icon} width={20} color={status.color} />
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Link
+                      routeName="virtualmachineinstancemigration"
+                      params={{
+                        name: migration.getName(),
+                        namespace: migration.getNamespace(),
+                      }}
+                    >
+                      <Typography variant="body2" fontWeight="medium" noWrap>
+                        {migration.jsonData?.spec?.vmiName || migration.getName()}
+                      </Typography>
+                    </Link>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
+                      <Typography variant="caption" color="text.secondary">
+                        {sourceNode}
+                      </Typography>
+                      <Icon icon="mdi:arrow-right" width={14} />
+                      <Typography variant="caption" color="text.secondary">
+                        {targetNode}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', gap: 1, mt: 0.5 }}>
+                      <Chip label={migration.getPhase()} size="small" variant="outlined" sx={{ height: 20, fontSize: '0.7rem' }} />
+                      {duration && (
+                        <Typography variant="caption" color="text.secondary">
+                          {duration}
+                        </Typography>
+                      )}
+                    </Box>
+                  </Box>
+                  <Typography variant="caption" color="text.secondary">
+                    {formatRelativeTime(migration.jsonData?.metadata?.creationTimestamp)}
+                  </Typography>
+                </Box>
+              );
+            })}
+          </Box>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 export default function Dashboard() {
   const { t } = useTranslation('glossary');
+
+  // Check if KubeVirt is installed
+  const { installed: kubeVirtInstalled, checking: checkingKubeVirt } = useKubeVirtInstalled();
 
   // Fetch all resources
   const { items: vms, error: vmError } = VirtualMachine.useList({});
@@ -283,56 +590,6 @@ export default function Dashboard() {
     };
   }, [dataVolumes]);
 
-  // Calculate OS distribution from VMIs (guest agent info)
-  const osDistribution = useMemo(() => {
-    const osMap = new Map<string, { count: number; versions: Map<string, number> }>();
-
-    if (vmis) {
-      for (const vmi of vmis) {
-        const guestOS = vmi.jsonData?.status?.guestOSInfo;
-        if (guestOS) {
-          const osName = guestOS.prettyName || guestOS.name || guestOS.id || 'Unknown';
-          const version = guestOS.version || guestOS.versionId || '';
-
-          // Normalize OS name for grouping
-          let normalizedOS = osName;
-          const lowerName = osName.toLowerCase();
-          if (lowerName.includes('ubuntu')) normalizedOS = 'Ubuntu';
-          else if (lowerName.includes('debian')) normalizedOS = 'Debian';
-          else if (lowerName.includes('fedora')) normalizedOS = 'Fedora';
-          else if (lowerName.includes('centos')) normalizedOS = 'CentOS';
-          else if (lowerName.includes('rhel') || lowerName.includes('red hat')) normalizedOS = 'RHEL';
-          else if (lowerName.includes('windows')) normalizedOS = 'Windows';
-          else if (lowerName.includes('suse') || lowerName.includes('sles')) normalizedOS = 'SUSE';
-          else if (lowerName.includes('arch')) normalizedOS = 'Arch Linux';
-          else if (lowerName.includes('alpine')) normalizedOS = 'Alpine';
-
-          if (!osMap.has(normalizedOS)) {
-            osMap.set(normalizedOS, { count: 0, versions: new Map() });
-          }
-          const osData = osMap.get(normalizedOS)!;
-          osData.count++;
-
-          if (version) {
-            const versionKey = version.split('.').slice(0, 2).join('.');
-            osData.versions.set(versionKey, (osData.versions.get(versionKey) || 0) + 1);
-          }
-        }
-      }
-    }
-
-    // Convert to array and sort by count
-    return Array.from(osMap.entries())
-      .map(([os, data]) => ({
-        os,
-        count: data.count,
-        versions: Array.from(data.versions.entries())
-          .sort((a, b) => b[1] - a[1])
-          .map(([v, c]) => ({ version: v, count: c })),
-      }))
-      .sort((a, b) => b.count - a.count);
-  }, [vmis]);
-
   // Calculate namespace distribution
   const namespaceStats = useMemo(() => {
     const nsMap = new Map<string, number>();
@@ -391,13 +648,120 @@ export default function Dashboard() {
     };
   }, [nads]);
 
+  // OS distribution stats from VMIs (guest agent data)
+  const osStats = useMemo(() => {
+    const osMap = new Map<string, { count: number; icon: string }>();
+
+    if (vmis) {
+      for (const vmi of vmis) {
+        const guestOS = vmi.jsonData?.status?.guestOSInfo;
+        if (guestOS) {
+          const osName = guestOS.prettyName || guestOS.name || guestOS.id || 'Unknown';
+          // Normalize OS names for grouping
+          let normalizedName = osName;
+          let icon = 'mdi:linux';
+
+          const lowerName = osName.toLowerCase();
+          if (lowerName.includes('windows')) {
+            normalizedName = 'Windows';
+            icon = 'mdi:microsoft-windows';
+          } else if (lowerName.includes('ubuntu')) {
+            normalizedName = 'Ubuntu';
+            icon = 'mdi:ubuntu';
+          } else if (lowerName.includes('debian')) {
+            normalizedName = 'Debian';
+            icon = 'mdi:debian';
+          } else if (lowerName.includes('centos')) {
+            normalizedName = 'CentOS';
+            icon = 'mdi:centos';
+          } else if (lowerName.includes('red hat') || lowerName.includes('rhel')) {
+            normalizedName = 'RHEL';
+            icon = 'mdi:redhat';
+          } else if (lowerName.includes('fedora')) {
+            normalizedName = 'Fedora';
+            icon = 'mdi:fedora';
+          } else if (lowerName.includes('suse') || lowerName.includes('sles')) {
+            normalizedName = 'SUSE';
+            icon = 'simple-icons:suse';
+          } else if (lowerName.includes('alpine')) {
+            normalizedName = 'Alpine';
+            icon = 'simple-icons:alpinelinux';
+          } else if (lowerName.includes('arch')) {
+            normalizedName = 'Arch Linux';
+            icon = 'simple-icons:archlinux';
+          } else if (lowerName.includes('freebsd')) {
+            normalizedName = 'FreeBSD';
+            icon = 'simple-icons:freebsd';
+          }
+
+          const existing = osMap.get(normalizedName);
+          if (existing) {
+            existing.count++;
+          } else {
+            osMap.set(normalizedName, { count: 1, icon });
+          }
+        }
+      }
+    }
+
+    return {
+      total: vmis?.filter(vmi => vmi.jsonData?.status?.guestOSInfo).length || 0,
+      byOS: Array.from(osMap.entries())
+        .map(([os, data]) => ({ os, count: data.count, icon: data.icon }))
+        .sort((a, b) => b.count - a.count),
+    };
+  }, [vmis]);
+
   const loading = !vms && !vmError;
+
+  // Show loading while checking KubeVirt installation
+  if (checkingKubeVirt) {
+    return <KubeVirtCheckLoading />;
+  }
+
+  // Show installation message if KubeVirt is not installed
+  if (kubeVirtInstalled === false) {
+    return <KubeVirtNotInstalled />;
+  }
 
   return (
     <Box sx={{ p: 3 }}>
       <Typography variant="h4" gutterBottom>
         KubeVirt Dashboard
       </Typography>
+
+      {/* Health Summary & Resources Row */}
+      <SectionBox title={t('Overview')}>
+        <Grid container spacing={2}>
+          <Grid item xs={12} md={8}>
+            <HealthSummaryCard vms={vms} loading={loading} />
+          </Grid>
+          <Grid item xs={12} md={4}>
+            <ResourceCard
+              title="Resource Totals"
+              loading={loading}
+              items={[
+                { label: 'Total vCPUs', value: resourceAllocation.totalCPU, color: 'primary' },
+                { label: 'Total Memory', value: resourceAllocation.totalMemory, color: 'info' },
+                { label: 'Total Disk', value: diskAllocation.totalDisk, color: 'success' },
+                { label: 'Nodes Running VMs', value: nodeStats.totalNodes, color: 'warning' },
+              ]}
+            />
+          </Grid>
+        </Grid>
+      </SectionBox>
+
+      {/* NEW: Events & Migration Timeline Row */}
+      <SectionBox title={t('Activity')}>
+        <Grid container spacing={2}>
+          <Grid item xs={12} md={6}>
+            <VMEventsPanel />
+          </Grid>
+          <Grid item xs={12} md={6}>
+            <MigrationTimeline migrations={migrations} loading={!migrations && !migrationError} />
+          </Grid>
+        </Grid>
+      </SectionBox>
 
       {/* Resource Overview */}
       <SectionBox title={t('Resource Overview')}>
@@ -471,199 +835,11 @@ export default function Dashboard() {
         </Grid>
       </SectionBox>
 
-      {/* Resource Allocation */}
-      <SectionBox title={t('Resource Allocation')}>
-        <Grid container spacing={2}>
-          <Grid item xs={12} md={4}>
-            <ResourceCard
-              title="Compute Resources (All VMs)"
-              loading={loading}
-              items={[
-                { label: 'Total vCPUs', value: resourceAllocation.totalCPU, color: 'primary' },
-                { label: 'Total Memory', value: resourceAllocation.totalMemory, color: 'info' },
-                { label: 'VMs Defined', value: vmStats.total },
-              ]}
-            />
-          </Grid>
-          <Grid item xs={12} md={4}>
-            <ResourceCard
-              title="Storage Resources"
-              loading={!dataVolumes && !dvError}
-              items={[
-                { label: 'Total Disk', value: diskAllocation.totalDisk, color: 'success' },
-                { label: 'Data Volumes', value: dvStats.total },
-                { label: 'Snapshots', value: snapshotStats.total },
-              ]}
-            />
-          </Grid>
-          <Grid item xs={12} md={4}>
-            <ResourceCard
-              title="Infrastructure"
-              loading={!vmis && !vmiError}
-              items={[
-                { label: 'Nodes Running VMs', value: nodeStats.totalNodes, color: 'warning' },
-                { label: 'Namespaces with VMs', value: namespaceStats.length },
-                { label: 'Network Attachments', value: nadStats.total },
-              ]}
-            />
-          </Grid>
-        </Grid>
-      </SectionBox>
-
-      {/* Operating System Distribution */}
-      <SectionBox title={t('Operating System Distribution')}>
-        <Grid container spacing={2}>
-          <Grid item xs={12} md={6}>
-            <Paper variant="outlined" sx={{ p: 2 }}>
-              <Typography variant="subtitle2" gutterBottom>
-                VMs by Operating System
-              </Typography>
-              {osDistribution.length === 0 ? (
-                <Typography variant="body2" color="text.secondary">
-                  No guest OS information available (guest agent may not be installed)
-                </Typography>
-              ) : (
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Operating System</TableCell>
-                      <TableCell align="center">Count</TableCell>
-                      <TableCell>Versions</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {osDistribution.map(os => (
-                      <TableRow key={os.os}>
-                        <TableCell>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <span>{getOSIcon(os.os)}</span>
-                            <Typography variant="body2">{os.os}</Typography>
-                          </Box>
-                        </TableCell>
-                        <TableCell align="center">
-                          <Chip label={os.count} size="small" color="primary" />
-                        </TableCell>
-                        <TableCell>
-                          <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                            {os.versions.slice(0, 3).map(v => (
-                              <Tooltip key={v.version} title={`${v.count} VM(s)`}>
-                                <Chip
-                                  label={v.version}
-                                  size="small"
-                                  variant="outlined"
-                                  sx={{ fontSize: '0.7rem' }}
-                                />
-                              </Tooltip>
-                            ))}
-                            {os.versions.length > 3 && (
-                              <Chip
-                                label={`+${os.versions.length - 3}`}
-                                size="small"
-                                variant="outlined"
-                                sx={{ fontSize: '0.7rem' }}
-                              />
-                            )}
-                          </Box>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </Paper>
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <Paper variant="outlined" sx={{ p: 2 }}>
-              <Typography variant="subtitle2" gutterBottom>
-                OS Distribution Chart
-              </Typography>
-              {osDistribution.length === 0 ? (
-                <Typography variant="body2" color="text.secondary">
-                  No data available
-                </Typography>
-              ) : (
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mt: 2 }}>
-                  {osDistribution.slice(0, 6).map(os => {
-                    const percentage = vmiStats.total > 0 ? (os.count / vmiStats.total) * 100 : 0;
-                    return (
-                      <Box key={os.os}>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                          <Typography variant="body2">
-                            {getOSIcon(os.os)} {os.os}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            {os.count} ({percentage.toFixed(0)}%)
-                          </Typography>
-                        </Box>
-                        <LinearProgress
-                          variant="determinate"
-                          value={percentage}
-                          sx={{ height: 8, borderRadius: 4 }}
-                        />
-                      </Box>
-                    );
-                  })}
-                </Box>
-              )}
-            </Paper>
-          </Grid>
-        </Grid>
-      </SectionBox>
-
-      {/* Status Breakdown */}
-      <SectionBox title={t('Status Breakdown')}>
-        <Grid container spacing={2}>
-          <Grid item xs={12} md={6}>
-            <StatusBreakdown
-              title="Virtual Machines"
-              items={[
-                { label: 'Running', count: vmStats.running, color: 'success' },
-                { label: 'Stopped', count: vmStats.stopped, color: 'default' },
-                { label: 'Starting', count: vmStats.starting, color: 'warning' },
-                { label: 'Error', count: vmStats.error, color: 'error' },
-              ]}
-            />
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <StatusBreakdown
-              title="VM Instances"
-              items={[
-                { label: 'Running', count: vmiStats.running, color: 'success' },
-                { label: 'Pending', count: vmiStats.pending, color: 'info' },
-                { label: 'Scheduling', count: vmiStats.scheduling, color: 'warning' },
-                { label: 'Failed', count: vmiStats.failed, color: 'error' },
-              ]}
-            />
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <StatusBreakdown
-              title="Data Volumes"
-              items={[
-                { label: 'Succeeded', count: dvStats.succeeded, color: 'success' },
-                { label: 'In Progress', count: dvStats.inProgress, color: 'warning' },
-                { label: 'Pending', count: dvStats.pending, color: 'info' },
-                { label: 'Failed', count: dvStats.failed, color: 'error' },
-              ]}
-            />
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <StatusBreakdown
-              title="Migrations"
-              items={[
-                { label: 'Running', count: migrationStats.running, color: 'warning' },
-                { label: 'Succeeded', count: migrationStats.succeeded, color: 'success' },
-                { label: 'Failed', count: migrationStats.failed, color: 'error' },
-              ]}
-            />
-          </Grid>
-        </Grid>
-      </SectionBox>
-
-      {/* Distribution & Topology */}
+      {/* Distribution */}
       <SectionBox title={t('Distribution & Topology')}>
         <Grid container spacing={2}>
           {/* Top Namespaces */}
-          <Grid item xs={12} md={4}>
+          <Grid item xs={12} md={3}>
             <Paper variant="outlined" sx={{ p: 2, height: '100%' }}>
               <Typography variant="subtitle2" gutterBottom>
                 Top Namespaces by VM Count
@@ -691,7 +867,7 @@ export default function Dashboard() {
           </Grid>
 
           {/* Node Distribution */}
-          <Grid item xs={12} md={4}>
+          <Grid item xs={12} md={3}>
             <Paper variant="outlined" sx={{ p: 2, height: '100%' }}>
               <Typography variant="subtitle2" gutterBottom>
                 VMs per Node
@@ -729,7 +905,7 @@ export default function Dashboard() {
           </Grid>
 
           {/* Network Types */}
-          <Grid item xs={12} md={4}>
+          <Grid item xs={12} md={3}>
             <Paper variant="outlined" sx={{ p: 2, height: '100%' }}>
               <Typography variant="subtitle2" gutterBottom>
                 Network Attachment Types
@@ -754,6 +930,48 @@ export default function Dashboard() {
                           t.type === 'sriov' ? 'warning' :
                           t.type === 'macvlan' ? 'info' : 'default'
                         }
+                        variant="outlined"
+                      />
+                    </Box>
+                  ))}
+                </Box>
+              )}
+            </Paper>
+          </Grid>
+
+          {/* OS Distribution */}
+          <Grid item xs={12} md={3}>
+            <Paper variant="outlined" sx={{ p: 2, height: '100%' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                <Typography variant="subtitle2">
+                  Guest OS Distribution
+                </Typography>
+                <Chip
+                  label={`${osStats.total} detected`}
+                  size="small"
+                  variant="outlined"
+                  color="info"
+                />
+              </Box>
+              {osStats.byOS.length === 0 ? (
+                <Typography variant="body2" color="text.secondary">
+                  No guest agent data available
+                </Typography>
+              ) : (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  {osStats.byOS.slice(0, 5).map(item => (
+                    <Box
+                      key={item.os}
+                      sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                    >
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Icon icon={item.icon} width={18} />
+                        <Typography variant="body2">{item.os}</Typography>
+                      </Box>
+                      <Chip
+                        label={item.count}
+                        size="small"
+                        color="primary"
                         variant="outlined"
                       />
                     </Box>

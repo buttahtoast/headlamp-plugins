@@ -13,6 +13,7 @@ import {
 } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router-dom';
+import { formatBytes } from '../utils/kubeVirtCheck';
 import VirtualMachineClusterInstancetype from './VirtualMachineClusterInstancetype';
 
 export interface VirtualMachineClusterInstancetypeDetailsProps {
@@ -52,7 +53,7 @@ export default function VirtualMachineClusterInstancetypeDetails(
           },
           {
             name: t('Memory'),
-            value: memory.guest,
+            value: formatBytes(memory.guest),
           },
           {
             name: t('Hugepages'),

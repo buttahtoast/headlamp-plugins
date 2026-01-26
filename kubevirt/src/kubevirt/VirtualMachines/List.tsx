@@ -10,7 +10,10 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import { Icon } from '@iconify/react';
 import { useMemo, useState } from 'react';
+import LiveMigrationDialog from '../components/LiveMigrationDialog';
+import { useKubeVirtInstalled, KubeVirtNotInstalled, KubeVirtCheckLoading, formatBytes } from '../utils/kubeVirtCheck';
 import SshConsole from '../SshConsole/SshConsole';
 import VncConsole from '../VncConsole/VncConsole';
 import VirtualMachineInstance from '../VirtualMachineInstance/VirtualMachineInstance';
@@ -204,6 +207,8 @@ export function VirtualMachineListRenderer(props: VirtualMachineListProps) {
   const [selectedVM, setSelectedVM] = useState<{ vm: VirtualMachine; vmi: VirtualMachineInstance | undefined } | null>(null);
   const [vncOpen, setVncOpen] = useState(false);
   const [sshOpen, setSshOpen] = useState(false);
+  const [migrationDialogOpen, setMigrationDialogOpen] = useState(false);
+  const [migrationTarget, setMigrationTarget] = useState<{ vm: VirtualMachine; vmi: VirtualMachineInstance } | null>(null);
 
   return (
     <>
@@ -382,7 +387,7 @@ export function VirtualMachineListRenderer(props: VirtualMachineListProps) {
               const domain = vm.jsonData?.spec?.template?.spec?.domain;
               const mem = domain?.resources?.requests?.memory || domain?.memory?.guest || '';
               return mem ? (
-                <Chip label={mem} size="small" variant="outlined" />
+                <Chip label={formatBytes(mem)} size="small" variant="outlined" />
               ) : (
                 <Typography variant="caption" color="text.secondary">-</Typography>
               );
@@ -462,7 +467,14 @@ export function VirtualMachineListRenderer(props: VirtualMachineListProps) {
                       <ActionButton
                         description="Live Migrate"
                         icon="mdi:swap-horizontal"
-                        onClick={() => vm.migrate()}
+                        onClick={() => {
+                          const vmiKey = `${vm.getNamespace()}/${vm.getName()}`;
+                          const vmi = vmiMap.get(vmiKey);
+                          if (vmi) {
+                            setMigrationTarget({ vm, vmi });
+                            setMigrationDialogOpen(true);
+                          }
+                        }}
                       />
                     </>
                   )}
@@ -505,11 +517,26 @@ export function VirtualMachineListRenderer(props: VirtualMachineListProps) {
           />
         </>
       )}
+      {/* Live Migration Dialog */}
+      {migrationTarget && (
+        <LiveMigrationDialog
+          open={migrationDialogOpen}
+          onClose={() => {
+            setMigrationDialogOpen(false);
+            setMigrationTarget(null);
+          }}
+          vmName={migrationTarget.vm.getName()}
+          vmiName={migrationTarget.vmi.getName()}
+          namespace={migrationTarget.vm.getNamespace()}
+          currentNode={migrationTarget.vmi.status?.nodeName}
+        />
+      )}
     </>
   );
 }
 
 export default function VirtualMachineList() {
+  const { installed: kubeVirtInstalled, checking: checkingKubeVirt } = useKubeVirtInstalled();
   const { items: vms, error: vmError } = VirtualMachine.useList({});
   const { items: vmis, error: vmiError } = VirtualMachineInstance.useList({});
 
@@ -524,6 +551,16 @@ export default function VirtualMachineList() {
     }
     return map;
   }, [vmis]);
+
+  // Show loading while checking KubeVirt installation
+  if (checkingKubeVirt) {
+    return <KubeVirtCheckLoading />;
+  }
+
+  // Show installation message if KubeVirt is not installed
+  if (kubeVirtInstalled === false) {
+    return <KubeVirtNotInstalled />;
+  }
 
   return (
     <VirtualMachineListRenderer

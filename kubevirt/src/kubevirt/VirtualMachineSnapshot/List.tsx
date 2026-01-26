@@ -11,6 +11,7 @@ import {
   Typography,
 } from '@mui/material';
 import { useSnackbar } from 'notistack';
+import { useKubeVirtInstalled, KubeVirtNotInstalled, KubeVirtCheckLoading } from '../utils/kubeVirtCheck';
 import VirtualMachineSnapshot from './VirtualMachineSnapshot';
 
 export interface VirtualMachineSnapshotListProps {
@@ -177,7 +178,16 @@ export function VirtualMachineSnapshotListRenderer(props: VirtualMachineSnapshot
 }
 
 export default function VirtualMachineSnapshotList() {
+  const { installed: kubeVirtInstalled, checking: checkingKubeVirt } = useKubeVirtInstalled();
   const { items, error } = VirtualMachineSnapshot.useList({});
+
+  if (checkingKubeVirt) {
+    return <KubeVirtCheckLoading />;
+  }
+
+  if (kubeVirtInstalled === false) {
+    return <KubeVirtNotInstalled />;
+  }
 
   return (
     <VirtualMachineSnapshotListRenderer

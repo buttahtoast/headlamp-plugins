@@ -1,4 +1,3 @@
-import { ApiProxy } from '@kinvolk/headlamp-plugin/lib';
 import {
   Link,
   SimpleTableProps,
@@ -11,8 +10,9 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { useSnackbar } from 'notistack';
 import { useState } from 'react';
+import LiveMigrationDialog from '../components/LiveMigrationDialog';
+import { useKubeVirtInstalled, KubeVirtNotInstalled, KubeVirtCheckLoading, formatBytes } from '../utils/kubeVirtCheck';
 import SshConsole from '../SshConsole/SshConsole';
 import VncConsole from '../VncConsole/VncConsole';
 import VirtualMachineInstance from './VirtualMachineInstance';
@@ -183,38 +183,11 @@ function getPhaseColor(phase: string): 'success' | 'error' | 'warning' | 'info' 
 
 export function VirtualMachineInstanceListRenderer(props: VirtualMachineInstanceListProps) {
   const { virtualMachineInstances, error, hideColumns = [], noNamespaceFilter } = props;
-  const { enqueueSnackbar } = useSnackbar();
   const [selectedVMI, setSelectedVMI] = useState<VirtualMachineInstance | null>(null);
   const [vncOpen, setVncOpen] = useState(false);
   const [sshOpen, setSshOpen] = useState(false);
-
-  const handleMigrate = async (vmi: VirtualMachineInstance) => {
-    try {
-      const migrationName = `${vmi.getName()}-migration-${Date.now()}`;
-      const migration = {
-        apiVersion: 'kubevirt.io/v1',
-        kind: 'VirtualMachineInstanceMigration',
-        metadata: {
-          name: migrationName,
-          namespace: vmi.getNamespace(),
-        },
-        spec: {
-          vmiName: vmi.getName(),
-        },
-      };
-      await ApiProxy.request(
-        `/apis/kubevirt.io/v1/namespaces/${vmi.getNamespace()}/virtualmachineinstancemigrations`,
-        {
-          method: 'POST',
-          body: JSON.stringify(migration),
-          headers: { 'Content-Type': 'application/json' },
-        }
-      );
-      enqueueSnackbar(`Migration initiated for ${vmi.getName()}`, { variant: 'success' });
-    } catch (err: any) {
-      enqueueSnackbar(`Failed to migrate: ${err.message}`, { variant: 'error' });
-    }
-  };
+  const [migrationDialogOpen, setMigrationDialogOpen] = useState(false);
+  const [migrationTarget, setMigrationTarget] = useState<VirtualMachineInstance | null>(null);
 
   return (
     <>
@@ -372,7 +345,7 @@ export function VirtualMachineInstanceListRenderer(props: VirtualMachineInstance
             const domain = vmi.spec?.domain;
             const mem = domain?.resources?.requests?.memory || domain?.memory?.guest || '';
             return mem ? (
-              <Chip label={mem} size="small" variant="outlined" />
+              <Chip label={formatBytes(mem)} size="small" variant="outlined" />
             ) : (
               <Typography variant="caption" color="text.secondary">-</Typography>
             );
@@ -431,7 +404,10 @@ export function VirtualMachineInstanceListRenderer(props: VirtualMachineInstance
                     <ActionButton
                       description="Live Migrate"
                       icon="mdi:swap-horizontal"
-                      onClick={() => handleMigrate(vmi)}
+                      onClick={() => {
+                        setMigrationTarget(vmi);
+                        setMigrationDialogOpen(true);
+                      }}
                     />
                   </>
                 )}
@@ -473,12 +449,36 @@ export function VirtualMachineInstanceListRenderer(props: VirtualMachineInstance
         />
       </>
     )}
+    {/* Live Migration Dialog */}
+    {migrationTarget && (
+      <LiveMigrationDialog
+        open={migrationDialogOpen}
+        onClose={() => {
+          setMigrationDialogOpen(false);
+          setMigrationTarget(null);
+        }}
+        vmName=""
+        vmiName={migrationTarget.getName()}
+        namespace={migrationTarget.getNamespace()}
+        currentNode={migrationTarget.status?.nodeName}
+      />
+    )}
     </>
   );
 }
 
 export default function VirtualMachineInstanceList() {
+  const { installed: kubeVirtInstalled, checking: checkingKubeVirt } = useKubeVirtInstalled();
   const { items, error } = VirtualMachineInstance.useList({});
+
+  if (checkingKubeVirt) {
+    return <KubeVirtCheckLoading />;
+  }
+
+  if (kubeVirtInstalled === false) {
+    return <KubeVirtNotInstalled />;
+  }
+
   return (
     <VirtualMachineInstanceListRenderer
       virtualMachineInstances={items}

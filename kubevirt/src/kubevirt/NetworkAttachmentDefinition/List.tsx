@@ -5,6 +5,7 @@ import {
 import { Resource } from '@kinvolk/headlamp-plugin/lib/components/common';
 import { ApiError } from '@kinvolk/headlamp-plugin/lib/lib/k8s/apiProxy';
 import { Chip, Typography } from '@mui/material';
+import { useKubeVirtInstalled, KubeVirtNotInstalled, KubeVirtCheckLoading } from '../utils/kubeVirtCheck';
 import NetworkAttachmentDefinition from './NetworkAttachmentDefinition';
 
 export interface NetworkAttachmentDefinitionListProps {
@@ -145,7 +146,16 @@ export function NetworkAttachmentDefinitionListRenderer(
 }
 
 export default function NetworkAttachmentDefinitionList() {
+  const { installed: kubeVirtInstalled, checking: checkingKubeVirt } = useKubeVirtInstalled();
   const { items, error } = NetworkAttachmentDefinition.useList({});
+
+  if (checkingKubeVirt) {
+    return <KubeVirtCheckLoading />;
+  }
+
+  if (kubeVirtInstalled === false) {
+    return <KubeVirtNotInstalled />;
+  }
 
   return (
     <NetworkAttachmentDefinitionListRenderer

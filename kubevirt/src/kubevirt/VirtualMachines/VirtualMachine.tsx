@@ -2,6 +2,33 @@ import ApiProxy, { StreamArgs, StreamResultsCb } from '@kinvolk/headlamp-plugin/
 import { KubeObject } from '@kinvolk/headlamp-plugin/lib/K8s/cluster';
 import VirtualMachineInstance from '../VirtualMachineInstance/VirtualMachineInstance';
 
+interface AddVolumeRequest {
+  name: string;
+  disk: {
+    name: string;
+    disk?: {
+      bus?: string;
+    };
+    serial?: string;
+  };
+  volumeSource: {
+    dataVolume?: {
+      name: string;
+      hotpluggable?: boolean;
+    };
+    persistentVolumeClaim?: {
+      claimName: string;
+      hotpluggable?: boolean;
+    };
+  };
+  dryRun?: boolean;
+}
+
+interface RemoveVolumeRequest {
+  name: string;
+  dryRun?: boolean;
+}
+
 class VirtualMachine extends KubeObject {
   constructor(jsonData: any) {
     super(jsonData);
@@ -109,6 +136,112 @@ class VirtualMachine extends KubeObject {
       }
     );
     return migrationName;
+  }
+
+  /**
+   * Hot-plug a volume to a running VM
+   * @param volumeName - Name for the new volume
+   * @param sourceType - 'dataVolume' or 'persistentVolumeClaim'
+   * @param sourceName - Name of the DataVolume or PVC
+   * @param bus - Disk bus type (default: 'scsi')
+   * @param dryRun - If true, validate without applying
+   */
+  async addVolume(
+    volumeName: string,
+    sourceType: 'dataVolume' | 'persistentVolumeClaim',
+    sourceName: string,
+    bus: string = 'scsi',
+    dryRun: boolean = false
+  ): Promise<void> {
+    const request: AddVolumeRequest = {
+      name: volumeName,
+      disk: {
+        name: volumeName,
+        disk: {
+          bus: bus,
+        },
+      },
+      volumeSource: {},
+    };
+
+    if (sourceType === 'dataVolume') {
+      request.volumeSource.dataVolume = {
+        name: sourceName,
+        hotpluggable: true,
+      };
+    } else {
+      request.volumeSource.persistentVolumeClaim = {
+        claimName: sourceName,
+        hotpluggable: true,
+      };
+    }
+
+    if (dryRun) {
+      request.dryRun = true;
+    }
+
+    await ApiProxy.request(
+      `/apis/subresources.kubevirt.io/v1/namespaces/${this.getNamespace()}/virtualmachines/${this.getName()}/addvolume`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(request),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+  }
+
+  /**
+   * Hot-unplug a volume from a running VM
+   * @param volumeName - Name of the volume to remove
+   * @param dryRun - If true, validate without applying
+   */
+  async removeVolume(volumeName: string, dryRun: boolean = false): Promise<void> {
+    const request: RemoveVolumeRequest = {
+      name: volumeName,
+    };
+
+    if (dryRun) {
+      request.dryRun = true;
+    }
+
+    await ApiProxy.request(
+      `/apis/subresources.kubevirt.io/v1/namespaces/${this.getNamespace()}/virtualmachines/${this.getName()}/removevolume`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(request),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+  }
+
+  /**
+   * Get the list of hotpluggable volumes attached to this VM
+   */
+  getHotpluggableVolumes(): { name: string; source: string; type: string }[] {
+    const volumes = this.spec?.template?.spec?.volumes || [];
+    const hotpluggable: { name: string; source: string; type: string }[] = [];
+
+    for (const volume of volumes) {
+      if (volume.dataVolume?.hotpluggable) {
+        hotpluggable.push({
+          name: volume.name,
+          source: volume.dataVolume.name,
+          type: 'dataVolume',
+        });
+      } else if (volume.persistentVolumeClaim?.hotpluggable) {
+        hotpluggable.push({
+          name: volume.name,
+          source: volume.persistentVolumeClaim.claimName,
+          type: 'persistentVolumeClaim',
+        });
+      }
+    }
+
+    return hotpluggable;
   }
 
   getVncUrl(): string {

@@ -1,4 +1,4 @@
-# Use the official Node.js 18 image as the base image for building the plugins
+# Use the official Node.js 21 image as the base image for building the plugins
 FROM node:21 AS builder
 
 # Set the working directory inside the container

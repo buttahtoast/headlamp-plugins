@@ -2,6 +2,7 @@ import { Link, SimpleTableProps } from '@kinvolk/headlamp-plugin/lib/CommonCompo
 import { Resource } from '@kinvolk/headlamp-plugin/lib/components/common';
 import { ApiError } from '@kinvolk/headlamp-plugin/lib/lib/k8s/apiProxy';
 import { Chip, Typography } from '@mui/material';
+import { useKubeVirtInstalled, KubeVirtNotInstalled, KubeVirtCheckLoading } from '../utils/kubeVirtCheck';
 import VirtualMachineClusterPreference from './VirtualMachineClusterPreference';
 
 export interface VirtualMachineClusterPreferenceListProps {
@@ -132,7 +133,16 @@ export function VirtualMachineClusterPreferenceListRenderer(
 }
 
 export default function VirtualMachineClusterPreferenceList() {
+  const { installed: kubeVirtInstalled, checking: checkingKubeVirt } = useKubeVirtInstalled();
   const { items, error } = VirtualMachineClusterPreference.useList({});
+
+  if (checkingKubeVirt) {
+    return <KubeVirtCheckLoading />;
+  }
+
+  if (kubeVirtInstalled === false) {
+    return <KubeVirtNotInstalled />;
+  }
 
   return (
     <VirtualMachineClusterPreferenceListRenderer

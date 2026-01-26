@@ -92,8 +92,8 @@ export default function SshConsole(props: SshConsoleProps) {
           // IPv6 loopback: ::1
           if (trimmed === '::1') return true;
           // IPv6 link-local: fe80::
-          if (trimmed.toLowerCase().startsWith('fe80:')) return true;
-          return false;
+          return trimmed.toLowerCase().startsWith('fe80:');
+
         };
 
         // Extract IP addresses from interfaces with network info

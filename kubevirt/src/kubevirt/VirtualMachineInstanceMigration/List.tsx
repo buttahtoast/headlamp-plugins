@@ -5,6 +5,7 @@ import {
 import { Resource } from '@kinvolk/headlamp-plugin/lib/components/common';
 import { ApiError } from '@kinvolk/headlamp-plugin/lib/lib/k8s/apiProxy';
 import { Box, Chip, Typography } from '@mui/material';
+import { useKubeVirtInstalled, KubeVirtNotInstalled, KubeVirtCheckLoading } from '../utils/kubeVirtCheck';
 import VirtualMachineInstanceMigration from './VirtualMachineInstanceMigration';
 
 export interface VirtualMachineInstanceMigrationListProps {
@@ -177,7 +178,16 @@ export function VirtualMachineInstanceMigrationListRenderer(
 }
 
 export default function VirtualMachineInstanceMigrationList() {
+  const { installed: kubeVirtInstalled, checking: checkingKubeVirt } = useKubeVirtInstalled();
   const { items, error } = VirtualMachineInstanceMigration.useList({});
+
+  if (checkingKubeVirt) {
+    return <KubeVirtCheckLoading />;
+  }
+
+  if (kubeVirtInstalled === false) {
+    return <KubeVirtNotInstalled />;
+  }
 
   return (
     <VirtualMachineInstanceMigrationListRenderer

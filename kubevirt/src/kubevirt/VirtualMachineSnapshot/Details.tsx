@@ -216,7 +216,18 @@ export default function VirtualMachineSnapshotDetails(props: VirtualMachineSnaps
                   icon="mdi:restore"
                   onClick={() => setRestoreDialog(true)}
                 />
-                <Dialog open={restoreDialog} onClose={() => setRestoreDialog(false)}>
+                <Dialog
+                  open={restoreDialog}
+                  onClose={() => setRestoreDialog(false)}
+                  maxWidth={false}
+                  PaperProps={{
+                    sx: {
+                      width: '100%',
+                      maxWidth: { xs: '95%', sm: 450, md: 500 },
+                      m: { xs: 1, sm: 2 },
+                    }
+                  }}
+                >
                   <DialogTitle>Restore Virtual Machine</DialogTitle>
                   <DialogContent>
                     <DialogContentText>

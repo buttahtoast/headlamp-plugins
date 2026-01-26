@@ -19,6 +19,16 @@ import VirtualMachineList from './kubevirt/VirtualMachines/List';
 import VirtualMachineSnapshotDetail from './kubevirt/VirtualMachineSnapshot/Details';
 import VirtualMachineSnapshotList from './kubevirt/VirtualMachineSnapshot/List';
 
+// New feature imports
+import PortForwarding from './kubevirt/PortForwarding/PortForwarding';
+import NetworkPolicyList from './kubevirt/NetworkPolicy/NetworkPolicyList';
+import NodeMaintenanceList from './kubevirt/NodeMaintenance/NodeMaintenanceList';
+import BackupList from './kubevirt/Backup/BackupList';
+import BackupDetails from './kubevirt/Backup/BackupDetails';
+import ScheduleList from './kubevirt/Backup/ScheduleList';
+import RestoreList from './kubevirt/Backup/RestoreList';
+import VMMetrics from './kubevirt/Monitoring/VMMetrics';
+
 // Parent sidebar entry
 registerSidebarEntry({
   parent: null,
@@ -82,16 +92,106 @@ registerSidebarEntry({
   url: '/kubevirt/datavolumes/',
 });
 
-// Network Attachments
+// ============ NETWORK SECTION ============
 registerSidebarEntry({
   parent: 'kubevirt',
-  name: 'networkattachmentdefinitions',
-  label: 'Network Attachments',
+  name: 'kubevirt-network',
+  label: 'Network',
   icon: 'mdi:lan',
+  url: '/kubevirt/port-forwarding/',
+});
+
+// Port Forwarding
+registerSidebarEntry({
+  parent: 'kubevirt-network',
+  name: 'port-forwarding',
+  label: 'Port Forwarding',
+  icon: 'mdi:lan-connect',
+  url: '/kubevirt/port-forwarding/',
+});
+
+// Network Policies
+registerSidebarEntry({
+  parent: 'kubevirt-network',
+  name: 'network-policies',
+  label: 'Network Policies',
+  icon: 'mdi:shield-network',
+  url: '/kubevirt/network-policies/',
+});
+
+// Network Attachments (moved under Network)
+registerSidebarEntry({
+  parent: 'kubevirt-network',
+  name: 'networkattachmentdefinitions',
+  label: 'Attachments (NADs)',
+  icon: 'mdi:ethernet',
   url: '/kubevirt/networkattachmentdefinitions/',
 });
 
-// Templates section
+// ============ DISASTER RECOVERY SECTION ============
+registerSidebarEntry({
+  parent: 'kubevirt',
+  name: 'kubevirt-dr',
+  label: 'Disaster Recovery',
+  icon: 'mdi:backup-restore',
+  url: '/kubevirt/dr/backups/',
+});
+
+// Backup List
+registerSidebarEntry({
+  parent: 'kubevirt-dr',
+  name: 'backup-list',
+  label: 'Backups',
+  icon: 'mdi:package-variant-closed',
+  url: '/kubevirt/dr/backups/',
+});
+
+// Backup Schedules
+registerSidebarEntry({
+  parent: 'kubevirt-dr',
+  name: 'backup-schedules',
+  label: 'Schedules',
+  icon: 'mdi:calendar-clock',
+  url: '/kubevirt/dr/schedules/',
+});
+
+// Restores
+registerSidebarEntry({
+  parent: 'kubevirt-dr',
+  name: 'backup-restores',
+  label: 'Restores',
+  icon: 'mdi:restore',
+  url: '/kubevirt/dr/restores/',
+});
+
+// ============ OPERATIONS SECTION ============
+registerSidebarEntry({
+  parent: 'kubevirt',
+  name: 'kubevirt-operations',
+  label: 'Operations',
+  icon: 'mdi:cog',
+  url: '/kubevirt/node-maintenance/',
+});
+
+// Node Maintenance
+registerSidebarEntry({
+  parent: 'kubevirt-operations',
+  name: 'node-maintenance',
+  label: 'Node Maintenance',
+  icon: 'mdi:wrench',
+  url: '/kubevirt/node-maintenance/',
+});
+
+// Monitoring
+registerSidebarEntry({
+  parent: 'kubevirt-operations',
+  name: 'monitoring',
+  label: 'Monitoring',
+  icon: 'mdi:chart-line',
+  url: '/kubevirt/monitoring/',
+});
+
+// ============ TEMPLATES SECTION ============
 registerSidebarEntry({
   parent: 'kubevirt',
   name: 'kubevirt-templates',
@@ -239,6 +339,28 @@ registerRoute({
   params: ['namespace', 'name'],
 });
 
+// ============ NETWORK ROUTES ============
+
+// Port Forwarding route
+registerRoute({
+  path: '/kubevirt/port-forwarding/',
+  parent: 'kubevirt',
+  sidebar: 'port-forwarding',
+  component: () => <PortForwarding />,
+  exact: true,
+  name: 'port-forwarding',
+});
+
+// Network Policies route
+registerRoute({
+  path: '/kubevirt/network-policies/',
+  parent: 'kubevirt',
+  sidebar: 'network-policies',
+  component: () => <NetworkPolicyList />,
+  exact: true,
+  name: 'network-policies',
+});
+
 // Network Attachment Definition routes
 registerRoute({
   path: '/kubevirt/networkattachmentdefinitions/',
@@ -258,6 +380,73 @@ registerRoute({
   name: 'networkattachmentdefinition',
   params: ['namespace', 'name'],
 });
+
+// ============ OPERATIONS ROUTES ============
+
+// Node Maintenance route
+registerRoute({
+  path: '/kubevirt/node-maintenance/',
+  parent: 'kubevirt',
+  sidebar: 'node-maintenance',
+  component: () => <NodeMaintenanceList />,
+  exact: true,
+  name: 'node-maintenance',
+});
+
+// ============ DISASTER RECOVERY ROUTES ============
+
+// Backups list route
+registerRoute({
+  path: '/kubevirt/dr/backups/',
+  parent: 'kubevirt',
+  sidebar: 'backup-list',
+  component: () => <BackupList />,
+  exact: true,
+  name: 'backups',
+});
+
+// Backup details route
+registerRoute({
+  path: '/kubevirt/dr/backups/:namespace/:name',
+  parent: 'kubevirt',
+  sidebar: 'backup-list',
+  component: () => <BackupDetails />,
+  exact: true,
+  name: 'backup',
+  params: ['namespace', 'name'],
+});
+
+// Backup schedules route
+registerRoute({
+  path: '/kubevirt/dr/schedules/',
+  parent: 'kubevirt',
+  sidebar: 'backup-schedules',
+  component: () => <ScheduleList />,
+  exact: true,
+  name: 'backup-schedules',
+});
+
+// Restores route
+registerRoute({
+  path: '/kubevirt/dr/restores/',
+  parent: 'kubevirt',
+  sidebar: 'backup-restores',
+  component: () => <RestoreList />,
+  exact: true,
+  name: 'backup-restores',
+});
+
+// Monitoring route
+registerRoute({
+  path: '/kubevirt/monitoring/',
+  parent: 'kubevirt',
+  sidebar: 'monitoring',
+  component: () => <VMMetrics />,
+  exact: true,
+  name: 'monitoring',
+});
+
+// ============ TEMPLATES ROUTES ============
 
 // Virtual Machine Cluster Instance Type routes
 registerRoute({

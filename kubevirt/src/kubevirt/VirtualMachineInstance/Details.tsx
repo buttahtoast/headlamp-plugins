@@ -2,24 +2,42 @@ import { ApiProxy } from '@kinvolk/headlamp-plugin/lib';
 import { ActionButton, Link, Resource, SectionBox } from '@kinvolk/headlamp-plugin/lib/components/common';
 import {
   Box,
+  Button,
   Chip,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  FormControl,
+  FormControlLabel,
+  IconButton,
+  InputLabel,
   LinearProgress,
+  MenuItem,
   Paper,
+  Select,
+  Switch,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
+  TextField,
   Tooltip,
   Typography,
 } from '@mui/material';
+import { Icon } from '@iconify/react';
 import { useSnackbar } from 'notistack';
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router-dom';
+import DiskManagement from '../components/DiskManagement';
+import SchedulingAffinity from '../components/SchedulingAffinity';
 import SshConsole from '../SshConsole/SshConsole';
 import Terminal from '../Terminal/Terminal';
+import { formatBytes } from '../utils/kubeVirtCheck';
 import VncConsole from '../VncConsole/VncConsole';
 import VirtualMachineInstance from './VirtualMachineInstance';
 
@@ -27,31 +45,6 @@ export interface VirtualMachineInstanceDetailsProps {
   showLogsDefault?: boolean;
   name?: string;
   namespace?: string;
-}
-
-// Helper to format bytes
-function formatBytes(bytes: number | string | undefined, decimals = 1): string {
-  if (bytes === undefined || bytes === null) return '-';
-  const num = typeof bytes === 'string' ? parseInt(bytes, 10) : bytes;
-  if (isNaN(num)) return String(bytes);
-  if (num === 0) return '0 B';
-
-  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB'];
-  let unitIndex = 0;
-  let value = num;
-
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex++;
-  }
-
-  return `${value.toFixed(decimals)} ${units[unitIndex]}`;
-}
-
-// Helper to parse Kubernetes memory format
-function parseK8sMemory(memory: string | undefined): string {
-  if (!memory) return 'Unknown';
-  return memory;
 }
 
 // Usage bar component
@@ -90,6 +83,676 @@ function getPhaseColor(phase: string): 'success' | 'error' | 'warning' | 'defaul
     default:
       return 'default';
   }
+}
+
+// Port presets for port forwarding
+const PORT_PRESETS = [
+  { name: 'SSH', port: 22, protocol: 'TCP' },
+  { name: 'RDP', port: 3389, protocol: 'TCP' },
+  { name: 'HTTP', port: 80, protocol: 'TCP' },
+  { name: 'HTTPS', port: 443, protocol: 'TCP' },
+  { name: 'VNC', port: 5900, protocol: 'TCP' },
+];
+
+// Port Forwarding Section for VMI Details
+interface PortForwardingSectionProps {
+  vmiName: string;
+  namespace: string;
+}
+
+function PortForwardingSection({ vmiName, namespace }: PortForwardingSectionProps) {
+  const { t } = useTranslation('glossary');
+  const { enqueueSnackbar } = useSnackbar();
+  const [services, setServices] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [portName, setPortName] = useState('');
+  const [targetPort, setTargetPort] = useState(22);
+  const [serviceType, setServiceType] = useState('LoadBalancer');
+  const [protocol, setProtocol] = useState('TCP');
+
+  // Fetch existing services for this VMI
+  useEffect(() => {
+    const fetchServices = async () => {
+      try {
+        const response = await ApiProxy.request(`/api/v1/namespaces/${namespace}/services`) as { items: any[] };
+        const vmiServices = response.items?.filter(svc =>
+          svc.spec?.selector?.['vm.kubevirt.io/name'] === vmiName ||
+          svc.metadata?.labels?.['kubevirt.io/vm'] === vmiName
+        ) || [];
+        setServices(vmiServices);
+        setLoading(false);
+      } catch (error) {
+        console.error('Failed to fetch services:', error);
+        setLoading(false);
+      }
+    };
+
+    fetchServices();
+    const interval = setInterval(fetchServices, 10000);
+    return () => clearInterval(interval);
+  }, [vmiName, namespace]);
+
+  const handleCreatePortForward = async () => {
+    if (!portName || !targetPort) {
+      enqueueSnackbar('Please fill all required fields', { variant: 'warning' });
+      return;
+    }
+
+    const serviceName = `${vmiName}-${portName.toLowerCase()}-${targetPort}`;
+    const service = {
+      apiVersion: 'v1',
+      kind: 'Service',
+      metadata: {
+        name: serviceName,
+        namespace: namespace,
+        labels: {
+          'kubevirt.io/vm': vmiName,
+          'app': `vm-${vmiName}`,
+        },
+      },
+      spec: {
+        type: serviceType,
+        selector: {
+          'vm.kubevirt.io/name': vmiName,
+        },
+        ports: [
+          {
+            name: portName.toLowerCase(),
+            protocol: protocol,
+            port: targetPort,
+            targetPort: targetPort,
+          },
+        ],
+      },
+    };
+
+    try {
+      await ApiProxy.request(`/api/v1/namespaces/${namespace}/services`, {
+        method: 'POST',
+        body: JSON.stringify(service),
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      enqueueSnackbar('Port forward created successfully', { variant: 'success' });
+      setDialogOpen(false);
+      setPortName('');
+      setTargetPort(22);
+
+      // Refresh services
+      const response = await ApiProxy.request(`/api/v1/namespaces/${namespace}/services`) as { items: any[] };
+      const vmiServices = response.items?.filter(svc =>
+        svc.spec?.selector?.['vm.kubevirt.io/name'] === vmiName ||
+        svc.metadata?.labels?.['kubevirt.io/vm'] === vmiName
+      ) || [];
+      setServices(vmiServices);
+    } catch (error: any) {
+      enqueueSnackbar(`Failed to create port forward: ${error.message}`, { variant: 'error' });
+    }
+  };
+
+  const handleDeleteService = async (svc: any) => {
+    try {
+      await ApiProxy.request(`/api/v1/namespaces/${namespace}/services/${svc.metadata.name}`, {
+        method: 'DELETE',
+      });
+      enqueueSnackbar('Port forward deleted', { variant: 'success' });
+      setServices(services.filter(s => s.metadata.name !== svc.metadata.name));
+    } catch (error: any) {
+      enqueueSnackbar(`Failed to delete: ${error.message}`, { variant: 'error' });
+    }
+  };
+
+  const getConnectionCommand = (svc: any, port: any): string => {
+    const host = svc.status?.loadBalancer?.ingress?.[0]?.ip || '<node-ip>';
+    const p = port.nodePort || port.port;
+    if (port.targetPort === 22) return `ssh user@${host} -p ${p}`;
+    if (port.targetPort === 3389) return `xfreerdp /v:${host}:${p}`;
+    return `${host}:${p}`;
+  };
+
+  return (
+    <SectionBox title={t('Port Forwarding')}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+        <Typography variant="body2" color="text.secondary">
+          Expose VMI ports via Kubernetes Services
+        </Typography>
+        <Button
+          variant="outlined"
+          size="small"
+          startIcon={<Icon icon="mdi:plus" />}
+          onClick={() => setDialogOpen(true)}
+        >
+          Add Port Forward
+        </Button>
+      </Box>
+
+      {loading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
+          <CircularProgress size={24} />
+        </Box>
+      ) : services.length === 0 ? (
+        <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+          <Typography variant="body2" color="text.secondary">
+            No port forwards configured for this VMI
+          </Typography>
+        </Paper>
+      ) : (
+        <TableContainer component={Paper} variant="outlined">
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Service</TableCell>
+                <TableCell>Type</TableCell>
+                <TableCell>Port</TableCell>
+                <TableCell>Node Port</TableCell>
+                <TableCell>Connection</TableCell>
+                <TableCell>Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {services.flatMap(svc =>
+                svc.spec?.ports?.map((port: any, idx: number) => (
+                  <TableRow key={`${svc.metadata.name}-${idx}`}>
+                    <TableCell>{svc.metadata.name}</TableCell>
+                    <TableCell>
+                      <Chip label={svc.spec.type} size="small" variant="outlined" />
+                    </TableCell>
+                    <TableCell>{port.port}</TableCell>
+                    <TableCell>{port.nodePort || '-'}</TableCell>
+                    <TableCell>
+                      <Tooltip title="Click to copy">
+                        <Box
+                          component="code"
+                          sx={{
+                            fontSize: '0.8em',
+                            cursor: 'pointer',
+                            bgcolor: 'action.hover',
+                            color: 'text.primary',
+                            padding: '2px 6px',
+                            borderRadius: 1,
+                          }}
+                          onClick={() => {
+                            navigator.clipboard.writeText(getConnectionCommand(svc, port));
+                            enqueueSnackbar('Copied to clipboard', { variant: 'success' });
+                          }}
+                        >
+                          {getConnectionCommand(svc, port)}
+                        </Box>
+                      </Tooltip>
+                    </TableCell>
+                    <TableCell>
+                      <IconButton size="small" color="error" onClick={() => handleDeleteService(svc)}>
+                        <Icon icon="mdi:delete" />
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
+
+      <Dialog
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        maxWidth={false}
+        PaperProps={{
+          sx: {
+            width: '100%',
+            maxWidth: { xs: '95%', sm: 500, md: 600 },
+            m: { xs: 1, sm: 2 },
+          }
+        }}
+      >
+        <DialogTitle>Create Port Forward</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+              <Typography variant="caption" color="text.secondary" sx={{ width: '100%' }}>
+                Quick presets:
+              </Typography>
+              {PORT_PRESETS.map(preset => (
+                <Chip
+                  key={preset.name}
+                  label={`${preset.name} (${preset.port})`}
+                  size="small"
+                  onClick={() => {
+                    setPortName(preset.name);
+                    setTargetPort(preset.port);
+                    setProtocol(preset.protocol);
+                  }}
+                  sx={{ cursor: 'pointer' }}
+                />
+              ))}
+            </Box>
+            <TextField
+              label="Port Name"
+              value={portName}
+              onChange={(e) => setPortName(e.target.value)}
+              placeholder="e.g., ssh, http"
+              fullWidth
+            />
+            <TextField
+              label="Target Port"
+              type="number"
+              value={targetPort}
+              onChange={(e) => setTargetPort(parseInt(e.target.value) || 0)}
+              fullWidth
+            />
+            <FormControl fullWidth>
+              <InputLabel>Service Type</InputLabel>
+              <Select value={serviceType} label="Service Type" onChange={(e) => setServiceType(e.target.value)}>
+                <MenuItem value="NodePort">NodePort</MenuItem>
+                <MenuItem value="LoadBalancer">LoadBalancer</MenuItem>
+                <MenuItem value="ClusterIP">ClusterIP (internal only)</MenuItem>
+              </Select>
+            </FormControl>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
+          <Button onClick={handleCreatePortForward} variant="contained">Create</Button>
+        </DialogActions>
+      </Dialog>
+    </SectionBox>
+  );
+}
+
+// Backup Section for VMI Details
+interface BackupSectionProps {
+  vmiName: string;
+  namespace: string;
+}
+
+function BackupSection({ vmiName, namespace }: BackupSectionProps) {
+  const { t } = useTranslation('glossary');
+  const { enqueueSnackbar } = useSnackbar();
+  const [backups, setBackups] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [veleroInstalled, setVeleroInstalled] = useState(true);
+  const [backupDialogOpen, setBackupDialogOpen] = useState(false);
+  const [restoreDialogOpen, setRestoreDialogOpen] = useState(false);
+  const [selectedBackup, setSelectedBackup] = useState<any>(null);
+  const [backupName, setBackupName] = useState('');
+  const [snapshotVolumes, setSnapshotVolumes] = useState(true);
+  const [snapshotMoveData, setSnapshotMoveData] = useState(true);
+  const [ttl, setTtl] = useState('720h');
+  const [restoreNamespace, setRestoreNamespace] = useState('');
+
+  // Fetch backups for this VMI
+  useEffect(() => {
+    const fetchBackups = async () => {
+      try {
+        const response = await ApiProxy.request('/apis/velero.io/v1/backups') as { items: any[] };
+        const vmiBackups = response.items?.filter(b =>
+          b.metadata?.labels?.['kubevirt.io/vm'] === vmiName ||
+          (b.spec?.includedNamespaces?.includes(namespace) &&
+           b.spec?.labelSelector?.matchLabels?.['vm.kubevirt.io/name'] === vmiName)
+        ) || [];
+        setBackups(vmiBackups);
+        setVeleroInstalled(true);
+        setLoading(false);
+      } catch (error: any) {
+        if (error.status === 404 || error.message?.includes('not found')) {
+          setVeleroInstalled(false);
+        }
+        setLoading(false);
+      }
+    };
+
+    fetchBackups();
+    const interval = setInterval(fetchBackups, 15000);
+    return () => clearInterval(interval);
+  }, [vmiName, namespace]);
+
+  const handleCreateBackup = async () => {
+    if (!backupName) {
+      enqueueSnackbar('Please provide a backup name', { variant: 'warning' });
+      return;
+    }
+
+    const backup = {
+      apiVersion: 'velero.io/v1',
+      kind: 'Backup',
+      metadata: {
+        name: backupName,
+        namespace: 'velero',
+        labels: {
+          'kubevirt.io/backup': 'true',
+          'kubevirt.io/vm': vmiName,
+          'kubevirt.io/vm-namespace': namespace,
+        },
+      },
+      spec: {
+        includedNamespaces: [namespace],
+        includedResources: [
+          'virtualmachines.kubevirt.io',
+          'virtualmachineinstances.kubevirt.io',
+          'datavolumes.cdi.kubevirt.io',
+          'persistentvolumeclaims',
+          'persistentvolumes',
+          'secrets',
+          'configmaps',
+        ],
+        orLabelSelectors: [
+          { matchLabels: { 'vm.kubevirt.io/name': vmiName } },
+          { matchLabels: { 'kubevirt.io/created-by': vmiName } },
+        ],
+        snapshotVolumes: snapshotVolumes,
+        snapshotMoveData: snapshotMoveData,
+        ttl: ttl,
+      },
+    };
+
+    try {
+      await ApiProxy.request('/apis/velero.io/v1/namespaces/velero/backups', {
+        method: 'POST',
+        body: JSON.stringify(backup),
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      enqueueSnackbar('Backup created successfully', { variant: 'success' });
+      setBackupDialogOpen(false);
+      setBackupName('');
+
+      // Refresh backups
+      const response = await ApiProxy.request('/apis/velero.io/v1/backups') as { items: any[] };
+      const vmiBackups = response.items?.filter(b =>
+        b.metadata?.labels?.['kubevirt.io/vm'] === vmiName
+      ) || [];
+      setBackups(vmiBackups);
+    } catch (error: any) {
+      enqueueSnackbar(`Failed to create backup: ${error.message}`, { variant: 'error' });
+    }
+  };
+
+  const handleRestore = async () => {
+    if (!selectedBackup) return;
+
+    const restoreName = `${selectedBackup.metadata.name}-restore-${Date.now()}`;
+    const restore: any = {
+      apiVersion: 'velero.io/v1',
+      kind: 'Restore',
+      metadata: {
+        name: restoreName,
+        namespace: 'velero',
+      },
+      spec: {
+        backupName: selectedBackup.metadata.name,
+      },
+    };
+
+    if (restoreNamespace) {
+      restore.spec.namespaceMapping = {
+        [namespace]: restoreNamespace,
+      };
+    }
+
+    try {
+      await ApiProxy.request('/apis/velero.io/v1/namespaces/velero/restores', {
+        method: 'POST',
+        body: JSON.stringify(restore),
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      enqueueSnackbar('Restore initiated successfully', { variant: 'success' });
+      setRestoreDialogOpen(false);
+      setSelectedBackup(null);
+      setRestoreNamespace('');
+    } catch (error: any) {
+      enqueueSnackbar(`Failed to restore: ${error.message}`, { variant: 'error' });
+    }
+  };
+
+  const handleDeleteBackup = async (backup: any) => {
+    try {
+      // Use DeleteBackupRequest to properly delete the backup and its data from object storage
+      const deleteRequest = {
+        apiVersion: 'velero.io/v1',
+        kind: 'DeleteBackupRequest',
+        metadata: {
+          name: `delete-${backup.metadata.name}-${Date.now()}`,
+          namespace: 'velero',
+        },
+        spec: {
+          backupName: backup.metadata.name,
+        },
+      };
+
+      await ApiProxy.request('/apis/velero.io/v1/namespaces/velero/deletebackuprequests', {
+        method: 'POST',
+        body: JSON.stringify(deleteRequest),
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      enqueueSnackbar('Backup deletion requested', { variant: 'success' });
+      setBackups(backups.filter(b => b.metadata.name !== backup.metadata.name));
+    } catch (error: any) {
+      enqueueSnackbar(`Failed to delete: ${error.message}`, { variant: 'error' });
+    }
+  };
+
+  const getStatusColor = (phase: string): 'success' | 'error' | 'warning' | 'default' => {
+    switch (phase) {
+      case 'Completed': return 'success';
+      case 'Failed': return 'error';
+      case 'InProgress': return 'warning';
+      default: return 'default';
+    }
+  };
+
+  if (!veleroInstalled) {
+    return (
+      <SectionBox title={t('Backups')}>
+        <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+          <Icon icon="mdi:alert-circle" width={32} color="#ed6c02" />
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            Velero is not installed. Install Velero to enable VMI backups.
+          </Typography>
+        </Paper>
+      </SectionBox>
+    );
+  }
+
+  return (
+    <SectionBox title={t('Backups')}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+        <Typography variant="body2" color="text.secondary">
+          Velero backups for this VMI
+        </Typography>
+        <Button
+          variant="outlined"
+          size="small"
+          startIcon={<Icon icon="mdi:backup-restore" />}
+          onClick={() => {
+            setBackupName(`${vmiName}-backup-${Date.now()}`);
+            setBackupDialogOpen(true);
+          }}
+        >
+          Create Backup
+        </Button>
+      </Box>
+
+      {loading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
+          <CircularProgress size={24} />
+        </Box>
+      ) : backups.length === 0 ? (
+        <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+          <Typography variant="body2" color="text.secondary">
+            No backups found for this VMI
+          </Typography>
+        </Paper>
+      ) : (
+        <TableContainer component={Paper} variant="outlined">
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Name</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell>Created</TableCell>
+                <TableCell>Expires</TableCell>
+                <TableCell>Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {backups.map(backup => (
+                <TableRow key={backup.metadata.name}>
+                  <TableCell>
+                    <Link
+                      routeName="backup"
+                      params={{
+                        namespace: backup.metadata.namespace,
+                        name: backup.metadata.name,
+                      }}
+                    >
+                      {backup.metadata.name}
+                    </Link>
+                  </TableCell>
+                  <TableCell>
+                    <Chip
+                      label={backup.status?.phase || 'Pending'}
+                      size="small"
+                      color={getStatusColor(backup.status?.phase || '')}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    {backup.metadata.creationTimestamp ?
+                      new Date(backup.metadata.creationTimestamp).toLocaleString() : '-'}
+                  </TableCell>
+                  <TableCell>
+                    {backup.status?.expiration ?
+                      new Date(backup.status.expiration).toLocaleDateString() : '-'}
+                  </TableCell>
+                  <TableCell>
+                    <Box sx={{ display: 'flex', gap: 0.5 }}>
+                      <Tooltip title="Restore from backup">
+                        <IconButton
+                          size="small"
+                          color="primary"
+                          onClick={() => {
+                            setSelectedBackup(backup);
+                            setRestoreDialogOpen(true);
+                          }}
+                          disabled={backup.status?.phase !== 'Completed'}
+                        >
+                          <Icon icon="mdi:restore" />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Delete backup">
+                        <IconButton
+                          size="small"
+                          color="error"
+                          onClick={() => handleDeleteBackup(backup)}
+                        >
+                          <Icon icon="mdi:delete" />
+                        </IconButton>
+                      </Tooltip>
+                    </Box>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
+
+      {/* Create Backup Dialog */}
+      <Dialog
+        open={backupDialogOpen}
+        onClose={() => setBackupDialogOpen(false)}
+        maxWidth={false}
+        PaperProps={{
+          sx: {
+            width: '100%',
+            maxWidth: { xs: '95%', sm: 500, md: 600 },
+            m: { xs: 1, sm: 2 },
+          }
+        }}
+      >
+        <DialogTitle>Create Backup</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+            <TextField
+              label="Backup Name"
+              value={backupName}
+              onChange={(e) => setBackupName(e.target.value)}
+              fullWidth
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={snapshotVolumes}
+                  onChange={(e) => setSnapshotVolumes(e.target.checked)}
+                />
+              }
+              label="Snapshot Volumes"
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={snapshotMoveData}
+                  onChange={(e) => setSnapshotMoveData(e.target.checked)}
+                  disabled={!snapshotVolumes}
+                />
+              }
+              label="Move Snapshots to Object Storage (for DR)"
+            />
+            <FormControl fullWidth>
+              <InputLabel>TTL (Time to Live)</InputLabel>
+              <Select value={ttl} label="TTL (Time to Live)" onChange={(e) => setTtl(e.target.value)}>
+                <MenuItem value="168h">7 days</MenuItem>
+                <MenuItem value="720h">30 days</MenuItem>
+                <MenuItem value="2160h">90 days</MenuItem>
+                <MenuItem value="8760h">1 year</MenuItem>
+              </Select>
+            </FormControl>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setBackupDialogOpen(false)}>Cancel</Button>
+          <Button onClick={handleCreateBackup} variant="contained">Create</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Restore Dialog */}
+      <Dialog
+        open={restoreDialogOpen}
+        onClose={() => setRestoreDialogOpen(false)}
+        maxWidth={false}
+        PaperProps={{
+          sx: {
+            width: '100%',
+            maxWidth: { xs: '95%', sm: 500, md: 600 },
+            m: { xs: 1, sm: 2 },
+          }
+        }}
+      >
+        <DialogTitle>Restore from Backup</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+            <Typography variant="body2">
+              Restoring from: <strong>{selectedBackup?.metadata?.name}</strong>
+            </Typography>
+            <TextField
+              label="Target Namespace (optional)"
+              value={restoreNamespace}
+              onChange={(e) => setRestoreNamespace(e.target.value)}
+              placeholder={`Leave empty to restore to ${namespace}`}
+              fullWidth
+              helperText="Specify a different namespace to restore to, or leave empty to use the original namespace"
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRestoreDialogOpen(false)}>Cancel</Button>
+          <Button onClick={handleRestore} variant="contained">Restore</Button>
+        </DialogActions>
+      </Dialog>
+    </SectionBox>
+  );
 }
 
 export default function VirtualMachineInstanceDetails(props: VirtualMachineInstanceDetailsProps) {
@@ -348,7 +1011,7 @@ export default function VirtualMachineInstanceDetails(props: VirtualMachineInsta
               value: (
                 <Box>
                   <Typography variant="body2">
-                    {parseK8sMemory(hw.memory.allocated)}
+                    {formatBytes(hw.memory.allocated)}
                   </Typography>
                   {hw.memory.usedBytes && hw.memory.totalBytes && (
                     <Typography variant="caption" color="text.secondary">
@@ -440,6 +1103,9 @@ export default function VirtualMachineInstanceDetails(props: VirtualMachineInsta
                           </TableBody>
                         </Table>
                       </TableContainer>
+                      <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                        Note: Real-time CPU usage requires metrics-server or Prometheus integration
+                      </Typography>
                     </Box>
 
                     {/* Memory Section */}
@@ -452,7 +1118,7 @@ export default function VirtualMachineInstanceDetails(props: VirtualMachineInsta
                           <TableBody>
                             <TableRow>
                               <TableCell sx={{ fontWeight: 'bold', width: '30%' }}>Allocated</TableCell>
-                              <TableCell>{parseK8sMemory(hw.memory.allocated)}</TableCell>
+                              <TableCell>{formatBytes(hw.memory.allocated)}</TableCell>
                             </TableRow>
                             {hw.memory.totalBytes && (
                               <TableRow>
@@ -490,234 +1156,6 @@ export default function VirtualMachineInstanceDetails(props: VirtualMachineInsta
                         </Typography>
                       )}
                     </Box>
-
-                    {/* Disks Section */}
-                    <Box>
-                      <Typography variant="subtitle2" gutterBottom>
-                        Disks ({hw.disks.length})
-                      </Typography>
-                      <TableContainer component={Paper} variant="outlined">
-                        <Table size="small">
-                          <TableHead>
-                            <TableRow>
-                              <TableCell sx={{ fontWeight: 'bold' }}>Name</TableCell>
-                              <TableCell sx={{ fontWeight: 'bold' }}>Type</TableCell>
-                              <TableCell sx={{ fontWeight: 'bold' }}>Bus</TableCell>
-                              <TableCell sx={{ fontWeight: 'bold' }}>Boot Order</TableCell>
-                              <TableCell sx={{ fontWeight: 'bold' }}>Source</TableCell>
-                            </TableRow>
-                          </TableHead>
-                          <TableBody>
-                            {hw.disks.map((disk: any, idx: number) => (
-                              <TableRow key={idx}>
-                                <TableCell>{disk.name}</TableCell>
-                                <TableCell>
-                                  <Chip
-                                    label={disk.type}
-                                    size="small"
-                                    variant="outlined"
-                                    color={disk.type === 'cdrom' ? 'secondary' : 'primary'}
-                                  />
-                                </TableCell>
-                                <TableCell>{disk.bus}</TableCell>
-                                <TableCell>{disk.bootOrder || '-'}</TableCell>
-                                <TableCell>
-                                  {disk.volume?.dataVolume?.name ? (
-                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                                      <Link
-                                        routeName="datavolume"
-                                        params={{
-                                          name: disk.volume.dataVolume.name,
-                                          namespace: item.getNamespace(),
-                                        }}
-                                      >
-                                        {disk.volume.dataVolume.name}
-                                      </Link>
-                                      {disk.volume.dataVolume.hotpluggable && (
-                                        <Chip label="hotpluggable" size="small" variant="outlined" color="warning" />
-                                      )}
-                                    </Box>
-                                  ) : disk.volume?.persistentVolumeClaim?.claimName ? (
-                                    <Link
-                                      routeName="persistentVolumeClaim"
-                                      params={{
-                                        name: disk.volume.persistentVolumeClaim.claimName,
-                                        namespace: item.getNamespace(),
-                                      }}
-                                    >
-                                      {disk.volume.persistentVolumeClaim.claimName}
-                                    </Link>
-                                  ) : disk.volume?.containerDisk?.image ? (
-                                    <Tooltip title={disk.volume.containerDisk.image}>
-                                      <Typography variant="body2" sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                        {disk.volume.containerDisk.image}
-                                      </Typography>
-                                    </Tooltip>
-                                  ) : disk.volume?.cloudInitConfigDrive ? (
-                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                                      <Chip label="cloud-init (ConfigDrive)" size="small" variant="outlined" color="info" />
-                                      {disk.volume.cloudInitConfigDrive.secretRef?.name && (
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                          <Typography variant="caption" color="text.secondary">Secret:</Typography>
-                                          <Link
-                                            routeName="secret"
-                                            params={{
-                                              name: disk.volume.cloudInitConfigDrive.secretRef.name,
-                                              namespace: item.getNamespace(),
-                                            }}
-                                          >
-                                            {disk.volume.cloudInitConfigDrive.secretRef.name}
-                                          </Link>
-                                        </Box>
-                                      )}
-                                      {disk.volume.cloudInitConfigDrive.networkDataSecretRef?.name && (
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                          <Typography variant="caption" color="text.secondary">Network:</Typography>
-                                          <Link
-                                            routeName="secret"
-                                            params={{
-                                              name: disk.volume.cloudInitConfigDrive.networkDataSecretRef.name,
-                                              namespace: item.getNamespace(),
-                                            }}
-                                          >
-                                            {disk.volume.cloudInitConfigDrive.networkDataSecretRef.name}
-                                          </Link>
-                                        </Box>
-                                      )}
-                                    </Box>
-                                  ) : disk.volume?.cloudInitNoCloud ? (
-                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                                      <Chip label="cloud-init (NoCloud)" size="small" variant="outlined" color="info" />
-                                      {disk.volume.cloudInitNoCloud.secretRef?.name && (
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                          <Typography variant="caption" color="text.secondary">Secret:</Typography>
-                                          <Link
-                                            routeName="secret"
-                                            params={{
-                                              name: disk.volume.cloudInitNoCloud.secretRef.name,
-                                              namespace: item.getNamespace(),
-                                            }}
-                                          >
-                                            {disk.volume.cloudInitNoCloud.secretRef.name}
-                                          </Link>
-                                        </Box>
-                                      )}
-                                      {disk.volume.cloudInitNoCloud.networkDataSecretRef?.name && (
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                          <Typography variant="caption" color="text.secondary">Network:</Typography>
-                                          <Link
-                                            routeName="secret"
-                                            params={{
-                                              name: disk.volume.cloudInitNoCloud.networkDataSecretRef.name,
-                                              namespace: item.getNamespace(),
-                                            }}
-                                          >
-                                            {disk.volume.cloudInitNoCloud.networkDataSecretRef.name}
-                                          </Link>
-                                        </Box>
-                                      )}
-                                    </Box>
-                                  ) : disk.volume?.configMap?.name ? (
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                      <Chip label="ConfigMap" size="small" variant="outlined" />
-                                      <Link
-                                        routeName="configmap"
-                                        params={{
-                                          name: disk.volume.configMap.name,
-                                          namespace: item.getNamespace(),
-                                        }}
-                                      >
-                                        {disk.volume.configMap.name}
-                                      </Link>
-                                    </Box>
-                                  ) : disk.volume?.secret?.secretName ? (
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                      <Chip label="Secret" size="small" variant="outlined" />
-                                      <Link
-                                        routeName="secret"
-                                        params={{
-                                          name: disk.volume.secret.secretName,
-                                          namespace: item.getNamespace(),
-                                        }}
-                                      >
-                                        {disk.volume.secret.secretName}
-                                      </Link>
-                                    </Box>
-                                  ) : disk.volume?.serviceAccount?.serviceAccountName ? (
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                      <Chip label="ServiceAccount" size="small" variant="outlined" />
-                                      <Link
-                                        routeName="serviceaccount"
-                                        params={{
-                                          name: disk.volume.serviceAccount.serviceAccountName,
-                                          namespace: item.getNamespace(),
-                                        }}
-                                      >
-                                        {disk.volume.serviceAccount.serviceAccountName}
-                                      </Link>
-                                    </Box>
-                                  ) : disk.volume?.downwardAPI ? (
-                                    <Chip label="DownwardAPI" size="small" variant="outlined" />
-                                  ) : disk.volume?.emptyDisk ? (
-                                    <Chip label={`EmptyDisk (${disk.volume.emptyDisk.capacity || 'auto'})`} size="small" variant="outlined" />
-                                  ) : (
-                                    'unknown'
-                                  )}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </TableContainer>
-                    </Box>
-
-                    {/* Filesystem Usage Section */}
-                    {hw.filesystems && hw.filesystems.length > 0 && (
-                      <Box>
-                        <Typography variant="subtitle2" gutterBottom>
-                          Filesystem Usage (Guest Agent)
-                        </Typography>
-                        <TableContainer component={Paper} variant="outlined">
-                          <Table size="small">
-                            <TableHead>
-                              <TableRow>
-                                <TableCell sx={{ fontWeight: 'bold' }}>Mount Point</TableCell>
-                                <TableCell sx={{ fontWeight: 'bold' }}>Filesystem</TableCell>
-                                <TableCell sx={{ fontWeight: 'bold' }}>Total</TableCell>
-                                <TableCell sx={{ fontWeight: 'bold' }}>Used</TableCell>
-                                <TableCell sx={{ fontWeight: 'bold' }}>Available</TableCell>
-                                <TableCell sx={{ fontWeight: 'bold', minWidth: 150 }}>Usage</TableCell>
-                              </TableRow>
-                            </TableHead>
-                            <TableBody>
-                              {hw.filesystems.map((fs: any, idx: number) => {
-                                const totalBytes = fs.totalBytes || 0;
-                                const usedBytes = fs.usedBytes || 0;
-                                const availableBytes = totalBytes - usedBytes;
-                                return (
-                                  <TableRow key={idx}>
-                                    <TableCell>
-                                      <code style={{ fontSize: '0.85em' }}>{fs.mountPoint || '-'}</code>
-                                    </TableCell>
-                                    <TableCell>{fs.fileSystemType || '-'}</TableCell>
-                                    <TableCell>{formatBytes(totalBytes)}</TableCell>
-                                    <TableCell>{formatBytes(usedBytes)}</TableCell>
-                                    <TableCell>{formatBytes(availableBytes)}</TableCell>
-                                    <TableCell>
-                                      <UsageBar
-                                        used={usedBytes}
-                                        total={totalBytes}
-                                        label={`${formatBytes(usedBytes)} used of ${formatBytes(totalBytes)}`}
-                                      />
-                                    </TableCell>
-                                  </TableRow>
-                                );
-                              })}
-                            </TableBody>
-                          </Table>
-                        </TableContainer>
-                      </Box>
-                    )}
 
                     {/* Network Section */}
                     <Box>
@@ -803,6 +1241,24 @@ export default function VirtualMachineInstanceDetails(props: VirtualMachineInsta
                   </Box>
                 </SectionBox>
               ),
+            },
+            {
+              id: 'diskManagement',
+              section: (() => {
+                const phase = item.status?.phase || '';
+                const conditions = item.status?.conditions || [];
+                const isPaused = conditions.some((c: any) => c.type === 'Paused' && c.status === 'True');
+                const isRunning = phase === 'Running' && !isPaused;
+                return (
+                  <DiskManagement
+                    vmi={item}
+                    namespace={item.getNamespace()}
+                    isRunning={isRunning}
+                    filesystemInfo={filesystemInfo}
+                    showRecommendations={false}
+                  />
+                );
+              })(),
             },
             {
               id: 'accessCredentials',
@@ -944,10 +1400,37 @@ export default function VirtualMachineInstanceDetails(props: VirtualMachineInsta
               })(),
             },
             {
+              id: 'affinity',
+              section: (
+                <SchedulingAffinity
+                  vmi={item}
+                  namespace={item.getNamespace()}
+                />
+              ),
+            },
+            {
+              id: 'portForwarding',
+              section: (
+                <PortForwardingSection
+                  vmiName={item.getName()}
+                  namespace={item.getNamespace()}
+                />
+              ),
+            },
+            {
+              id: 'backups',
+              section: (
+                <BackupSection
+                  vmiName={item.getName()}
+                  namespace={item.getNamespace()}
+                />
+              ),
+            },
+            {
               id: 'conditions',
               section: <Resource.ConditionsSection resource={item?.jsonData} />,
             },
-          ];
+          ].filter(s => s.section !== null);
         }}
         actions={item => {
           if (!item) return [];

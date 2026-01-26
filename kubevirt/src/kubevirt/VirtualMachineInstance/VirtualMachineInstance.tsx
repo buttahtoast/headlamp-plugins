@@ -17,7 +17,7 @@ class VirtualMachineInstance extends KubeObject {
 
   getLastStateChangeTimestamp() {
     return new Date(
-      this.status?.conditions?.find(c => c.type === 'Ready')?.lastTransitionTime || 0
+      this.status?.conditions?.find((c: { type: string; }) => c.type === 'Ready')?.lastTransitionTime || 0
     );
   }
 

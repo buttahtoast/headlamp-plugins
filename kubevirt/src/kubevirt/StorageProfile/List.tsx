@@ -2,6 +2,7 @@ import { Link, SimpleTableProps } from '@kinvolk/headlamp-plugin/lib/CommonCompo
 import { Resource } from '@kinvolk/headlamp-plugin/lib/components/common';
 import { ApiError } from '@kinvolk/headlamp-plugin/lib/lib/k8s/apiProxy';
 import { Box, Chip, Typography } from '@mui/material';
+import { useKubeVirtInstalled, KubeVirtNotInstalled, KubeVirtCheckLoading } from '../utils/kubeVirtCheck';
 import StorageProfile from './StorageProfile';
 
 export interface StorageProfileListProps {
@@ -135,7 +136,16 @@ export function StorageProfileListRenderer(props: StorageProfileListProps) {
 }
 
 export default function StorageProfileList() {
+  const { installed: kubeVirtInstalled, checking: checkingKubeVirt } = useKubeVirtInstalled();
   const { items, error } = StorageProfile.useList({});
+
+  if (checkingKubeVirt) {
+    return <KubeVirtCheckLoading />;
+  }
+
+  if (kubeVirtInstalled === false) {
+    return <KubeVirtNotInstalled />;
+  }
 
   return <StorageProfileListRenderer items={items} error={error} reflectTableInURL />;
 }

@@ -11,6 +11,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import { useKubeVirtInstalled, KubeVirtNotInstalled, KubeVirtCheckLoading, formatBytes } from '../utils/kubeVirtCheck';
 import DataVolume from './DataVolume';
 
 export interface DataVolumeListProps {
@@ -169,8 +170,9 @@ export function DataVolumeListRenderer(props: DataVolumeListProps) {
           getValue: dv => dv.getStorageSize(),
           render: dv => {
             const size = dv.getStorageSize();
-            return size && size !== '-' ? (
-              <Chip label={size} size="small" variant="outlined" />
+            const formattedSize = formatBytes(size);
+            return formattedSize && formattedSize !== '-' ? (
+              <Chip label={formattedSize} size="small" variant="outlined" />
             ) : (
               <Typography variant="caption" color="text.secondary">-</Typography>
             );
@@ -201,7 +203,16 @@ export function DataVolumeListRenderer(props: DataVolumeListProps) {
 }
 
 export default function DataVolumeList() {
+  const { installed: kubeVirtInstalled, checking: checkingKubeVirt } = useKubeVirtInstalled();
   const { items, error } = DataVolume.useList({});
+
+  if (checkingKubeVirt) {
+    return <KubeVirtCheckLoading />;
+  }
+
+  if (kubeVirtInstalled === false) {
+    return <KubeVirtNotInstalled />;
+  }
 
   return (
     <DataVolumeListRenderer

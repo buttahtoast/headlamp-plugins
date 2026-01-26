@@ -2,6 +2,7 @@ import { Link, SimpleTableProps } from '@kinvolk/headlamp-plugin/lib/CommonCompo
 import { Resource } from '@kinvolk/headlamp-plugin/lib/components/common';
 import { ApiError } from '@kinvolk/headlamp-plugin/lib/lib/k8s/apiProxy';
 import { Chip, Typography } from '@mui/material';
+import { useKubeVirtInstalled, KubeVirtNotInstalled, KubeVirtCheckLoading, formatBytes } from '../utils/kubeVirtCheck';
 import VirtualMachineClusterInstancetype from './VirtualMachineClusterInstancetype';
 
 export interface VirtualMachineClusterInstancetypeListProps {
@@ -63,7 +64,7 @@ export function VirtualMachineClusterInstancetypeListRenderer(
             const memory = item.getMemory();
             return (
               <Chip
-                label={`${memory.guest}${memory.hugepages ? ` (${memory.hugepages.pageSize})` : ''}`}
+                label={`${formatBytes(memory.guest)}${memory.hugepages ? ` (${memory.hugepages.pageSize})` : ''}`}
                 size="small"
                 variant="outlined"
                 color="info"
@@ -129,7 +130,16 @@ export function VirtualMachineClusterInstancetypeListRenderer(
 }
 
 export default function VirtualMachineClusterInstancetypeList() {
+  const { installed: kubeVirtInstalled, checking: checkingKubeVirt } = useKubeVirtInstalled();
   const { items, error } = VirtualMachineClusterInstancetype.useList({});
+
+  if (checkingKubeVirt) {
+    return <KubeVirtCheckLoading />;
+  }
+
+  if (kubeVirtInstalled === false) {
+    return <KubeVirtNotInstalled />;
+  }
 
   return (
     <VirtualMachineClusterInstancetypeListRenderer

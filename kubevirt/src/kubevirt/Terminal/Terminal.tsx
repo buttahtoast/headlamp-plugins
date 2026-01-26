@@ -234,7 +234,7 @@ export default function Terminal(props: TerminalProps) {
       {...other}
     >
       <DialogContent
-        sx={theme => ({
+        sx={(theme: { spacing: (arg0: number) => any; }) => ({
           height: '100%',
           display: 'flex',
           flexDirection: 'column',
@@ -265,7 +265,7 @@ export default function Terminal(props: TerminalProps) {
           </Box>
         )}
         <Box
-          sx={theme => ({
+          sx={(theme: { spacing: (arg0: number) => any; }) => ({
             paddingTop: theme.spacing(1),
             flex: 1,
             width: '100%',
