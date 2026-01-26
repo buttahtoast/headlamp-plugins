@@ -122,14 +122,14 @@ export default function BackupList() {
       return;
     }
 
-    // Build spec - only include VM resources, let kubevirt-velero-plugin handle the rest
+    // Build spec matching the velero CLI format that works with kubevirt-velero-plugin
     const spec: any = {
       includedNamespaces: [selectedNamespace],
-      // Only backup KubeVirt VM resources - the plugin will include associated DataVolumes/PVCs
-      includedResources: [
-        'virtualmachines.kubevirt.io',
-        'virtualmachineinstances.kubevirt.io',
-      ],
+      resourcePolicies: {
+        kind: 'configmap',
+        name: 'velero-volume-policies',
+      },
+      itemOperationTimeout: '6h0m0s',
       ttl: ttl,
     };
 
@@ -143,11 +143,11 @@ export default function BackupList() {
       spec.snapshotVolumes = false;
     }
 
-    // When backing up a specific VM, use label selector
+    // When backing up a specific VM, use label selector with kubevirt.io/vm label
     if (selectedVM) {
       spec.labelSelector = {
         matchLabels: {
-          'vm.kubevirt.io/name': selectedVM,
+          'kubevirt.io/vm': selectedVM,
         },
       };
     }
@@ -237,8 +237,9 @@ export default function BackupList() {
   // Get VM name from backup
   const getVMName = (backup: VeleroBackup): string => {
     return backup.metadata.labels?.['kubevirt.io/vm'] ||
-           backup.spec?.orLabelSelectors?.[0]?.matchLabels?.['vm.kubevirt.io/name'] ||
+           backup.spec?.labelSelector?.matchLabels?.['kubevirt.io/vm'] ||
            backup.spec?.labelSelector?.matchLabels?.['vm.kubevirt.io/name'] ||
+           backup.spec?.orLabelSelectors?.[0]?.matchLabels?.['vm.kubevirt.io/name'] ||
            '';
   };
 

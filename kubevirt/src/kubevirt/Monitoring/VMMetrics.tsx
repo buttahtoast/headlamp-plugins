@@ -1,9 +1,9 @@
 import { ApiProxy } from '@kinvolk/headlamp-plugin/lib';
 import { Link, SectionBox } from '@kinvolk/headlamp-plugin/lib/components/common';
 import {
+  Autocomplete,
   Box,
-  Card,
-  CardContent,
+  Chip,
   CircularProgress,
   FormControl,
   Grid,
@@ -11,15 +11,15 @@ import {
   MenuItem,
   Paper,
   Select,
+  TextField,
   Typography,
 } from '@mui/material';
 import { Icon } from '@iconify/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useKubeVirtInstalled, KubeVirtNotInstalled, KubeVirtCheckLoading } from '../utils/kubeVirtCheck';
 import {
-  LineChart,
-  Line,
   AreaChart,
   Area,
   XAxis,
@@ -43,6 +43,13 @@ interface VMMetricSeries {
   data: MetricData[];
 }
 
+interface PrometheusEndpoint {
+  namespace: string;
+  name: string;
+  port: string;
+  type: 'services' | 'pods';
+}
+
 // Time range options
 const TIME_RANGES = [
   { label: '1 Hour', value: '1h', step: '1m' },
@@ -54,14 +61,43 @@ const TIME_RANGES = [
 // Color palette for multiple VMs
 const COLORS = ['#2196f3', '#4caf50', '#ff9800', '#f44336', '#9c27b0', '#00bcd4', '#795548', '#607d8b'];
 
+// Labels to search for Prometheus installations
+const PROMETHEUS_LABELS = [
+  'headlamp-prometheus=true',
+  'app.kubernetes.io/name=prometheus',
+  'app=prometheus',
+  'app=kube-prometheus-stack-prometheus',
+  'app.kubernetes.io/component=prometheus',
+];
+
 export default function VMMetrics() {
   const { t } = useTranslation('glossary');
+  const location = useLocation();
   const { installed: kubeVirtInstalled, checking: checkingKubeVirt } = useKubeVirtInstalled();
+
+  // Parse URL params
+  const urlParams = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    return {
+      namespace: params.get('namespace') || '',
+      vm: params.get('vm') || '',
+    };
+  }, [location.search]);
+
+  // Initialize from URL params
   const [timeRange, setTimeRange] = useState('1h');
-  const [selectedNamespace, setSelectedNamespace] = useState('');
-  const [selectedVM, setSelectedVM] = useState('');
+  const [selectedNamespace, setSelectedNamespace] = useState(urlParams.namespace);
+  const [selectedVM, setSelectedVM] = useState(urlParams.vm);
   const [loading, setLoading] = useState(false);
-  const [prometheusAvailable, setPrometheusAvailable] = useState(true);
+  const [prometheusAvailable, setPrometheusAvailable] = useState<boolean | null>(null);
+  const [prometheusEndpoint, setPrometheusEndpoint] = useState<PrometheusEndpoint | null>(null);
+  const [checkingPrometheus, setCheckingPrometheus] = useState(true);
+
+  // Update state when URL params change
+  useEffect(() => {
+    if (urlParams.namespace) setSelectedNamespace(urlParams.namespace);
+    if (urlParams.vm) setSelectedVM(urlParams.vm);
+  }, [urlParams.namespace, urlParams.vm]);
 
   // Metric state
   const [cpuMetrics, setCpuMetrics] = useState<VMMetricSeries[]>([]);
@@ -82,31 +118,141 @@ export default function VMMetrics() {
     return Array.from(nsSet).sort();
   }, [vms]);
 
-  // Get running VMs in selected namespace
-  const runningVMs = useMemo(() => {
+  // Get VMs filtered by namespace
+  const filteredVMs = useMemo(() => {
     if (!vms) return [];
-    let filtered = vms.filter(vm => vm.getStatus() === 'Running');
     if (selectedNamespace) {
-      filtered = filtered.filter(vm => vm.getNamespace() === selectedNamespace);
+      return vms.filter(vm => vm.getNamespace() === selectedNamespace);
     }
-    return filtered;
+    return vms;
   }, [vms, selectedNamespace]);
 
-  // Query Prometheus
-  const queryPrometheus = async (query: string): Promise<any> => {
-    try {
-      const response = await ApiProxy.request(
-        `/api/prometheus/api/v1/query?query=${encodeURIComponent(query)}`
-      );
-      return response;
-    } catch (error) {
-      console.error('Prometheus query failed:', error);
-      throw error;
-    }
-  };
+  // Get running VMs count
+  const runningVMs = useMemo(() => {
+    return filteredVMs.filter(vm => vm.getStatus() === 'Running');
+  }, [filteredVMs]);
 
-  // Query Prometheus range
-  const queryPrometheusRange = async (query: string, range: string, step: string): Promise<any> => {
+  // VM status counts
+  const vmStatusCounts = useMemo(() => {
+    const counts = { running: 0, stopped: 0, paused: 0, other: 0, total: 0 };
+    filteredVMs.forEach(vm => {
+      counts.total++;
+      const status = vm.getStatus();
+      if (status === 'Running') counts.running++;
+      else if (status === 'Stopped') counts.stopped++;
+      else if (status === 'Paused') counts.paused++;
+      else counts.other++;
+    });
+    return counts;
+  }, [filteredVMs]);
+
+  // VM options for autocomplete (limit to running VMs for metrics)
+  const vmOptions = useMemo(() => {
+    return runningVMs.map(vm => ({
+      label: vm.getName(),
+      namespace: vm.getNamespace(),
+      id: `${vm.getNamespace()}/${vm.getName()}`,
+    }));
+  }, [runningVMs]);
+
+  // Build Prometheus proxy URL
+  const getPrometheusUrl = useCallback((endpoint: PrometheusEndpoint, path: string) => {
+    return `/api/v1/namespaces/${endpoint.namespace}/${endpoint.type}/${endpoint.name}:${endpoint.port}/proxy${path}`;
+  }, []);
+
+  // Test if Prometheus endpoint is reachable
+  const testPrometheusEndpoint = useCallback(async (endpoint: PrometheusEndpoint): Promise<boolean> => {
+    try {
+      const url = getPrometheusUrl(endpoint, '/api/v1/query?query=up');
+      const response = await ApiProxy.request(url);
+      return response?.status === 'success';
+    } catch {
+      return false;
+    }
+  }, [getPrometheusUrl]);
+
+  // Auto-detect Prometheus installation
+  const detectPrometheus = useCallback(async (): Promise<PrometheusEndpoint | null> => {
+    // Search for Prometheus services first (more reliable)
+    for (const labelSelector of PROMETHEUS_LABELS) {
+      try {
+        const response = await ApiProxy.request(
+          `/api/v1/services?labelSelector=${encodeURIComponent(labelSelector)}`
+        ) as { items?: any[] };
+
+        if (response?.items?.length) {
+          for (const svc of response.items) {
+            const port = svc.spec?.ports?.[0]?.port || '9090';
+            const endpoint: PrometheusEndpoint = {
+              namespace: svc.metadata.namespace,
+              name: svc.metadata.name,
+              port: String(port),
+              type: 'services',
+            };
+
+            if (await testPrometheusEndpoint(endpoint)) {
+              console.log('Found Prometheus service:', endpoint);
+              return endpoint;
+            }
+          }
+        }
+      } catch (err) {
+        // Continue to next label
+      }
+    }
+
+    // Fallback: Search for Prometheus pods
+    for (const labelSelector of PROMETHEUS_LABELS) {
+      try {
+        const response = await ApiProxy.request(
+          `/api/v1/pods?labelSelector=${encodeURIComponent(labelSelector)}`
+        ) as { items?: any[] };
+
+        if (response?.items?.length) {
+          for (const pod of response.items) {
+            if (pod.status?.phase !== 'Running') continue;
+
+            const container = pod.spec?.containers?.[0];
+            const port = container?.ports?.[0]?.containerPort || '9090';
+            const endpoint: PrometheusEndpoint = {
+              namespace: pod.metadata.namespace,
+              name: pod.metadata.name,
+              port: String(port),
+              type: 'pods',
+            };
+
+            if (await testPrometheusEndpoint(endpoint)) {
+              console.log('Found Prometheus pod:', endpoint);
+              return endpoint;
+            }
+          }
+        }
+      } catch (err) {
+        // Continue to next label
+      }
+    }
+
+    return null;
+  }, [testPrometheusEndpoint]);
+
+  // Detect Prometheus on mount
+  useEffect(() => {
+    const detect = async () => {
+      setCheckingPrometheus(true);
+      const endpoint = await detectPrometheus();
+      setPrometheusEndpoint(endpoint);
+      setPrometheusAvailable(endpoint !== null);
+      setCheckingPrometheus(false);
+    };
+    detect();
+  }, [detectPrometheus]);
+
+  // Query Prometheus range using auto-detected endpoint
+  const queryPrometheusRange = useCallback(async (query: string, range: string, step: string): Promise<any> => {
+    if (!prometheusEndpoint) {
+      throw new Error('Prometheus endpoint not available');
+    }
+
     const now = Math.floor(Date.now() / 1000);
     let start = now;
 
@@ -118,18 +264,22 @@ export default function VMMetrics() {
     }
 
     try {
-      const response = await ApiProxy.request(
-        `/api/prometheus/api/v1/query_range?query=${encodeURIComponent(query)}&start=${start}&end=${now}&step=${step}`
+      const url = getPrometheusUrl(
+        prometheusEndpoint,
+        `/api/v1/query_range?query=${encodeURIComponent(query)}&start=${start}&end=${now}&step=${step}`
       );
+      const response = await ApiProxy.request(url);
       return response;
     } catch (error) {
       console.error('Prometheus range query failed:', error);
       throw error;
     }
-  };
+  }, [prometheusEndpoint, getPrometheusUrl]);
 
   // Fetch metrics
   useEffect(() => {
+    if (!prometheusEndpoint) return;
+
     const fetchMetrics = async () => {
       setLoading(true);
 
@@ -232,11 +382,8 @@ export default function VMMetrics() {
           }));
           setStorageWriteMetrics(series);
         }
-
-        setPrometheusAvailable(true);
       } catch (error) {
         console.error('Failed to fetch metrics:', error);
-        setPrometheusAvailable(false);
       }
 
       setLoading(false);
@@ -245,7 +392,7 @@ export default function VMMetrics() {
     fetchMetrics();
     const interval = setInterval(fetchMetrics, 30000);
     return () => clearInterval(interval);
-  }, [timeRange, selectedNamespace, selectedVM]);
+  }, [timeRange, selectedNamespace, selectedVM, prometheusEndpoint, queryPrometheusRange]);
 
   // Format timestamp for chart
   const formatTimestamp = (ts: number): string => {
@@ -256,13 +403,50 @@ export default function VMMetrics() {
     return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
   };
 
+  // Maximum VMs to show on chart
+  const MAX_CHART_VMS = 10;
+
+  // Get top VMs by average metric value
+  const getTopVMs = (series: VMMetricSeries[], limit: number): VMMetricSeries[] => {
+    if (series.length <= limit) return series;
+
+    // Calculate average value for each VM
+    const withAvg = series.map(s => {
+      const sum = s.data.reduce((acc, d) => acc + d.value, 0);
+      const avg = s.data.length > 0 ? sum / s.data.length : 0;
+      return { series: s, avg };
+    });
+
+    // Sort by average descending and take top N
+    withAvg.sort((a, b) => b.avg - a.avg);
+    return withAvg.slice(0, limit).map(w => w.series);
+  };
+
+  // Calculate aggregated totals for all VMs
+  const getAggregatedData = (series: VMMetricSeries[]): MetricData[] => {
+    if (series.length === 0) return [];
+
+    const dataMap = new Map<number, number>();
+
+    series.forEach(s => {
+      s.data.forEach(d => {
+        const key = Math.floor(d.timestamp / 60000) * 60000;
+        dataMap.set(key, (dataMap.get(key) || 0) + d.value);
+      });
+    });
+
+    return Array.from(dataMap.entries())
+      .map(([timestamp, value]) => ({ timestamp, value }))
+      .sort((a, b) => a.timestamp - b.timestamp);
+  };
+
   // Merge time series data for multi-VM charts
-  const mergeSeriesData = (series: VMMetricSeries[]): any[] => {
+  const mergeSeriesData = (series: VMMetricSeries[], includeTotal: boolean = false): any[] => {
     if (series.length === 0) return [];
 
     const dataMap = new Map<number, any>();
 
-    series.forEach((s, idx) => {
+    series.forEach((s) => {
       s.data.forEach(d => {
         const key = Math.floor(d.timestamp / 60000) * 60000; // Round to minute
         if (!dataMap.has(key)) {
@@ -272,19 +456,45 @@ export default function VMMetrics() {
       });
     });
 
+    // Add total if requested
+    if (includeTotal && series.length > 1) {
+      dataMap.forEach((entry, key) => {
+        let total = 0;
+        series.forEach(s => {
+          if (entry[s.vmName] !== undefined) {
+            total += entry[s.vmName];
+          }
+        });
+        entry['_total'] = total;
+      });
+    }
+
     return Array.from(dataMap.values()).sort((a, b) => a.timestamp - b.timestamp);
   };
 
-  // Render metric chart
+  // Render metric chart with VM limiting
   const renderChart = (series: VMMetricSeries[], title: string, unit: string, color: string = '#2196f3') => {
-    const data = mergeSeriesData(series);
-    const vmNames = series.map(s => s.vmName);
+    const totalVMs = series.length;
+    const limitedSeries = getTopVMs(series, MAX_CHART_VMS);
+    const showingLimited = totalVMs > MAX_CHART_VMS;
+    const data = mergeSeriesData(limitedSeries, showingLimited);
+    const vmNames = limitedSeries.map(s => s.vmName);
 
     return (
       <Paper variant="outlined" sx={{ p: 2 }}>
-        <Typography variant="subtitle2" gutterBottom>
-          {title}
-        </Typography>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+          <Typography variant="subtitle2">
+            {title}
+          </Typography>
+          {showingLimited && (
+            <Chip
+              size="small"
+              label={`Top ${MAX_CHART_VMS} of ${totalVMs} VMs`}
+              color="info"
+              variant="outlined"
+            />
+          )}
+        </Box>
         {loading ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 200 }}>
             <CircularProgress size={32} />
@@ -308,9 +518,27 @@ export default function VMMetrics() {
               />
               <Tooltip
                 labelFormatter={(ts) => new Date(ts).toLocaleString()}
-                formatter={(value: number) => [`${value.toFixed(2)} ${unit}`, '']}
+                formatter={(value: number, name: string) => [
+                  `${value.toFixed(2)} ${unit}`,
+                  name === '_total' ? 'Total (all VMs)' : name
+                ]}
               />
-              <Legend />
+              <Legend
+                wrapperStyle={{ fontSize: '12px' }}
+                formatter={(value) => value === '_total' ? 'Total (all VMs)' : value}
+              />
+              {showingLimited && (
+                <Area
+                  key="_total"
+                  type="monotone"
+                  dataKey="_total"
+                  stroke="#666"
+                  fill="#666"
+                  fillOpacity={0.1}
+                  strokeWidth={2}
+                  strokeDasharray="5 5"
+                />
+              )}
               {vmNames.map((vmName, idx) => (
                 <Area
                   key={vmName}
@@ -339,6 +567,16 @@ export default function VMMetrics() {
     return <KubeVirtNotInstalled />;
   }
 
+  // Show loading while detecting Prometheus
+  if (checkingPrometheus) {
+    return (
+      <Box sx={{ p: 3, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 400 }}>
+        <CircularProgress />
+        <Typography sx={{ mt: 2 }}>Detecting Prometheus...</Typography>
+      </Box>
+    );
+  }
+
   if (!prometheusAvailable) {
     return (
       <Box sx={{ p: 3 }}>
@@ -346,28 +584,32 @@ export default function VMMetrics() {
         <Paper variant="outlined" sx={{ p: 4, textAlign: 'center' }}>
           <Icon icon="mdi:chart-line-variant" width={64} color="#9e9e9e" />
           <Typography variant="h6" sx={{ mt: 2 }}>
-            Prometheus Not Available
+            Prometheus Not Found
           </Typography>
           <Typography variant="body1" color="text.secondary" sx={{ mt: 1 }}>
-            Prometheus metrics are required for VM monitoring.
+            Could not auto-detect a Prometheus installation in your cluster.
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-            Ensure Prometheus is installed and accessible via the Headlamp proxy at:
+            Ensure Prometheus is installed with one of these labels:
           </Typography>
           <Box
             sx={{
               mt: 1,
-              p: 1,
+              p: 2,
               bgcolor: 'action.hover',
               borderRadius: 1,
-              fontFamily: 'monospace',
-              fontSize: '0.9em',
+              textAlign: 'left',
             }}
           >
-            <Typography component="code" sx={{ fontFamily: 'monospace', color: 'text.primary' }}>
-              /api/prometheus/api/v1/query
-            </Typography>
+            {PROMETHEUS_LABELS.map(label => (
+              <Typography key={label} component="code" sx={{ fontFamily: 'monospace', display: 'block', fontSize: '0.85rem' }}>
+                {label}
+              </Typography>
+            ))}
           </Box>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+            Or add the label <code>headlamp-prometheus=true</code> to your Prometheus service.
+          </Typography>
         </Paper>
       </Box>
     );
@@ -380,7 +622,7 @@ export default function VMMetrics() {
       </Typography>
 
       <SectionBox title={t('Filters')}>
-        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
           <FormControl sx={{ minWidth: 150 }} size="small">
             <InputLabel>Time Range</InputLabel>
             <Select
@@ -394,38 +636,63 @@ export default function VMMetrics() {
             </Select>
           </FormControl>
 
-          <FormControl sx={{ minWidth: 150 }} size="small">
-            <InputLabel>Namespace</InputLabel>
-            <Select
-              value={selectedNamespace}
-              label="Namespace"
-              onChange={(e) => {
-                setSelectedNamespace(e.target.value);
-                setSelectedVM('');
-              }}
-            >
-              <MenuItem value="">All Namespaces</MenuItem>
-              {namespaces.map(ns => (
-                <MenuItem key={ns} value={ns}>{ns}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          <Autocomplete
+            size="small"
+            sx={{ minWidth: 200 }}
+            options={namespaces}
+            value={selectedNamespace || null}
+            onChange={(_, newValue) => {
+              setSelectedNamespace(newValue || '');
+              setSelectedVM('');
+            }}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="Namespace"
+                placeholder={`Search ${namespaces.length} namespaces...`}
+              />
+            )}
+            noOptionsText="No namespaces found"
+          />
 
-          <FormControl sx={{ minWidth: 200 }} size="small">
-            <InputLabel>Virtual Machine</InputLabel>
-            <Select
-              value={selectedVM}
-              label="Virtual Machine"
-              onChange={(e) => setSelectedVM(e.target.value)}
-            >
-              <MenuItem value="">All VMs</MenuItem>
-              {runningVMs.map(vm => (
-                <MenuItem key={`${vm.getNamespace()}/${vm.getName()}`} value={vm.getName()}>
-                  {vm.getName()} ({vm.getNamespace()})
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          <Autocomplete
+            size="small"
+            sx={{ minWidth: 280 }}
+            options={vmOptions}
+            value={vmOptions.find(opt => opt.label === selectedVM) || null}
+            onChange={(_, newValue) => setSelectedVM(newValue?.label || '')}
+            getOptionLabel={(option) => option.label}
+            renderOption={(props, option) => (
+              <li {...props} key={option.id}>
+                <Box>
+                  <Typography variant="body2">{option.label}</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {option.namespace}
+                  </Typography>
+                </Box>
+              </li>
+            )}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="Virtual Machine"
+                placeholder={`Search ${runningVMs.length} running VMs...`}
+              />
+            )}
+            isOptionEqualToValue={(option, value) => option.id === value.id}
+            noOptionsText="No running VMs found"
+          />
+
+          <Box sx={{ flex: 1 }} />
+
+          {prometheusEndpoint && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'success.main' }} />
+              <Typography variant="caption" color="text.secondary">
+                Prometheus: {prometheusEndpoint.name}.{prometheusEndpoint.namespace}
+              </Typography>
+            </Box>
+          )}
         </Box>
       </SectionBox>
 
@@ -462,48 +729,51 @@ export default function VMMetrics() {
         </Grid>
       </SectionBox>
 
-      <SectionBox title={t('Running VMs')}>
-        <Grid container spacing={2}>
-          {runningVMs.slice(0, 8).map((vm, idx) => {
-            const vmi = vmis?.find(
-              v => v.getName() === vm.getName() && v.getNamespace() === vm.getNamespace()
-            );
-            return (
-              <Grid item xs={12} sm={6} md={3} key={`${vm.getNamespace()}/${vm.getName()}`}>
-                <Card variant="outlined">
-                  <CardContent>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                      <Box
-                        sx={{
-                          width: 12,
-                          height: 12,
-                          borderRadius: '50%',
-                          bgcolor: COLORS[idx % COLORS.length],
-                        }}
-                      />
-                      <Link
-                        routeName="virtualmachine"
-                        params={{ name: vm.getName(), namespace: vm.getNamespace() }}
-                      >
-                        <Typography variant="subtitle2" noWrap>
-                          {vm.getName()}
-                        </Typography>
-                      </Link>
-                    </Box>
-                    <Typography variant="caption" color="text.secondary" display="block">
-                      {vm.getNamespace()}
-                    </Typography>
-                    {vmi?.jsonData?.status?.nodeName && (
-                      <Typography variant="caption" color="text.secondary">
-                        Node: {vmi.jsonData.status.nodeName}
-                      </Typography>
-                    )}
-                  </CardContent>
-                </Card>
-              </Grid>
-            );
-          })}
-        </Grid>
+      <SectionBox title={t('VM Summary')}>
+        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+          <Chip
+            icon={<Icon icon="mdi:play-circle" />}
+            label={`${vmStatusCounts.running} Running`}
+            color="success"
+            variant="outlined"
+          />
+          <Chip
+            icon={<Icon icon="mdi:stop-circle" />}
+            label={`${vmStatusCounts.stopped} Stopped`}
+            color="default"
+            variant="outlined"
+          />
+          {vmStatusCounts.paused > 0 && (
+            <Chip
+              icon={<Icon icon="mdi:pause-circle" />}
+              label={`${vmStatusCounts.paused} Paused`}
+              color="warning"
+              variant="outlined"
+            />
+          )}
+          {vmStatusCounts.other > 0 && (
+            <Chip
+              icon={<Icon icon="mdi:help-circle" />}
+              label={`${vmStatusCounts.other} Other`}
+              color="info"
+              variant="outlined"
+            />
+          )}
+          <Box sx={{ flex: 1 }} />
+          <Typography variant="body2" color="text.secondary">
+            Total: {vmStatusCounts.total} VMs
+            {selectedNamespace && ` in ${selectedNamespace}`}
+          </Typography>
+          <Link routeName="virtualmachines">
+            <Chip
+              icon={<Icon icon="mdi:open-in-new" />}
+              label="View All VMs"
+              clickable
+              color="primary"
+              variant="outlined"
+            />
+          </Link>
+        </Box>
       </SectionBox>
     </Box>
   );

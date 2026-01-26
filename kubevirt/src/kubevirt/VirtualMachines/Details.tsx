@@ -372,6 +372,31 @@ function BackupSection({ vmName, namespace }: BackupSectionProps) {
       return;
     }
 
+    const spec: any = {
+      includedNamespaces: [namespace],
+      labelSelector: {
+        matchLabels: {
+          'kubevirt.io/vm': vmName,
+        },
+      },
+      resourcePolicies: {
+        kind: 'configmap',
+        name: 'velero-volume-policies',
+      },
+      itemOperationTimeout: '6h0m0s',
+      ttl: ttl,
+    };
+
+    // Only add snapshot options if enabled
+    if (snapshotVolumes) {
+      spec.snapshotVolumes = true;
+      if (snapshotMoveData) {
+        spec.snapshotMoveData = true;
+      }
+    } else {
+      spec.snapshotVolumes = false;
+    }
+
     const backup = {
       apiVersion: 'velero.io/v1',
       kind: 'Backup',
@@ -384,25 +409,7 @@ function BackupSection({ vmName, namespace }: BackupSectionProps) {
           'kubevirt.io/vm-namespace': namespace,
         },
       },
-      spec: {
-        includedNamespaces: [namespace],
-        includedResources: [
-          'virtualmachines.kubevirt.io',
-          'virtualmachineinstances.kubevirt.io',
-          'datavolumes.cdi.kubevirt.io',
-          'persistentvolumeclaims',
-          'persistentvolumes',
-          'secrets',
-          'configmaps',
-        ],
-        orLabelSelectors: [
-          { matchLabels: { 'vm.kubevirt.io/name': vmName } },
-          { matchLabels: { 'kubevirt.io/created-by': vmName } },
-        ],
-        snapshotVolumes: snapshotVolumes,
-        snapshotMoveData: snapshotMoveData,
-        ttl: ttl,
-      },
+      spec,
     };
 
     try {
@@ -1772,6 +1779,20 @@ export default function VirtualMachineDetails(props: VirtualMachineDetailsProps)
               ),
             });
           }
+
+          // Metrics button - always available
+          actionsList.push({
+            id: 'metrics',
+            action: (
+              <ActionButton
+                description={t('View Metrics')}
+                icon="mdi:chart-line"
+                onClick={() => {
+                  window.location.assign(`/kubevirt/monitoring/?namespace=${encodeURIComponent(namespace || '')}&vm=${encodeURIComponent(name || '')}`);
+                }}
+              />
+            ),
+          });
 
           // Snapshot button - always available
           actionsList.push({

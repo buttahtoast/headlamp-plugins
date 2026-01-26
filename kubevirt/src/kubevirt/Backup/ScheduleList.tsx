@@ -122,14 +122,14 @@ export default function ScheduleList() {
       return;
     }
 
-    // Build template spec - only include VM resources, let kubevirt-velero-plugin handle the rest
+    // Build template spec matching the velero CLI format that works with kubevirt-velero-plugin
     const template: any = {
       includedNamespaces: [selectedNamespace],
-      // Only backup KubeVirt VM resources - the plugin will include associated DataVolumes/PVCs
-      includedResources: [
-        'virtualmachines.kubevirt.io',
-        'virtualmachineinstances.kubevirt.io',
-      ],
+      resourcePolicies: {
+        kind: 'configmap',
+        name: 'velero-volume-policies',
+      },
+      itemOperationTimeout: '6h0m0s',
       ttl: ttl,
     };
 
@@ -143,11 +143,11 @@ export default function ScheduleList() {
       template.snapshotVolumes = false;
     }
 
-    // When backing up a specific VM, use label selector
+    // When backing up a specific VM, use label selector with kubevirt.io/vm label
     if (selectedVM) {
       template.labelSelector = {
         matchLabels: {
-          'vm.kubevirt.io/name': selectedVM,
+          'kubevirt.io/vm': selectedVM,
         },
       };
     }
@@ -213,8 +213,9 @@ export default function ScheduleList() {
   // Get VM name from schedule
   const getVMName = (schedule: VeleroSchedule): string => {
     return schedule.metadata.labels?.['kubevirt.io/vm'] ||
-           schedule.spec?.template?.orLabelSelectors?.[0]?.matchLabels?.['vm.kubevirt.io/name'] ||
+           schedule.spec?.template?.labelSelector?.matchLabels?.['kubevirt.io/vm'] ||
            schedule.spec?.template?.labelSelector?.matchLabels?.['vm.kubevirt.io/name'] ||
+           schedule.spec?.template?.orLabelSelectors?.[0]?.matchLabels?.['vm.kubevirt.io/name'] ||
            '';
   };
 
