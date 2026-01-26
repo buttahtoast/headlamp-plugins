@@ -1,6 +1,7 @@
 import { ApiProxy } from '@kinvolk/headlamp-plugin/lib';
 import { Link, SectionBox } from '@kinvolk/headlamp-plugin/lib/components/common';
 import {
+  Autocomplete,
   Box,
   Button,
   Checkbox,
@@ -82,7 +83,7 @@ interface ColumnDef {
 
 const ALL_COLUMNS: ColumnDef[] = [
   { id: 'name', label: 'Name', minWidth: 280, sortable: true, filterable: true },
-  { id: 'namespace', label: 'VM Namespace', minWidth: 120, sortable: true, filterable: true },
+  { id: 'namespace', label: 'Namespace', minWidth: 120, sortable: true, filterable: true },
   { id: 'vm', label: 'VM', minWidth: 120, sortable: true, filterable: true },
   { id: 'status', label: 'Status', minWidth: 100, sortable: true, filterable: true },
   { id: 'started', label: 'Started', minWidth: 150, sortable: true, filterable: false },
@@ -112,6 +113,9 @@ export default function BackupList() {
     vm: '',
     status: '',
   });
+
+  // Namespace filter (top-level)
+  const [namespaceFilter, setNamespaceFilter] = useState<string | null>(null);
 
   // Search and display state
   const [showSearch, setShowSearch] = useState(false);
@@ -154,12 +158,22 @@ export default function BackupList() {
     return () => clearInterval(interval);
   }, [fetchBackups]);
 
-  // Get unique namespaces
+  // Get unique namespaces from VMs
   const namespaces = useMemo(() => {
     const nsSet = new Set<string>();
     vms?.forEach(vm => nsSet.add(vm.getNamespace()));
     return Array.from(nsSet).sort();
   }, [vms]);
+
+  // Get unique namespaces from backups for the filter
+  const backupNamespaces = useMemo(() => {
+    const nsSet = new Set<string>();
+    backups.forEach(b => {
+      const ns = getBackupNamespace(b);
+      if (ns) nsSet.add(ns);
+    });
+    return Array.from(nsSet).sort();
+  }, [backups]);
 
   // Get VMs in selected namespace
   const filteredVMs = useMemo(() => {
@@ -316,6 +330,11 @@ export default function BackupList() {
   const processedBackups = useMemo(() => {
     let result = [...backups];
 
+    // Apply namespace filter (top-level)
+    if (namespaceFilter) {
+      result = result.filter(b => getBackupNamespace(b) === namespaceFilter);
+    }
+
     // Apply global search
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
@@ -393,7 +412,7 @@ export default function BackupList() {
     });
 
     return result;
-  }, [backups, filters, sortField, sortDirection, searchQuery]);
+  }, [backups, filters, sortField, sortDirection, searchQuery, namespaceFilter]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -496,24 +515,6 @@ export default function BackupList() {
           disableGutters
           sx={{ mb: 1, gap: 1, minHeight: 'auto', flexWrap: 'wrap' }}
         >
-          {selected.size > 0 && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Typography variant="body2" color="text.secondary">
-                {selected.size} selected
-              </Typography>
-              <Button
-                variant="contained"
-                color="error"
-                size="small"
-                startIcon={<Icon icon="mdi:delete" />}
-                onClick={handleDeleteSelected}
-                sx={{ whiteSpace: 'nowrap' }}
-              >
-                Delete Selected
-              </Button>
-            </Box>
-          )}
-
           <Box sx={{ flexGrow: 1 }} />
 
           {showSearch && (
@@ -538,6 +539,45 @@ export default function BackupList() {
                 ),
               }}
             />
+          )}
+
+          <Autocomplete
+            size="small"
+            options={backupNamespaces}
+            value={namespaceFilter}
+            onChange={(_, value) => setNamespaceFilter(value)}
+            renderInput={(params) => (
+              <TextField {...params} placeholder="All namespaces" />
+            )}
+            sx={{ minWidth: 180 }}
+          />
+
+          {selected.size > 0 && (
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1,
+                bgcolor: 'action.selected',
+                borderRadius: 1,
+                px: 1.5,
+                py: 0.5,
+              }}
+            >
+              <Typography variant="body2" color="text.secondary">
+                {selected.size} selected
+              </Typography>
+              <Button
+                variant="contained"
+                color="error"
+                size="small"
+                startIcon={<Icon icon="mdi:delete" />}
+                onClick={handleDeleteSelected}
+                sx={{ whiteSpace: 'nowrap' }}
+              >
+                Delete Selected
+              </Button>
+            </Box>
           )}
 
           <Tooltip title={showSearch ? 'Hide search' : 'Show search'}>
@@ -585,25 +625,6 @@ export default function BackupList() {
         <TableContainer component={Paper} variant="outlined">
           <Table size="small">
             <TableHead>
-              {/* Filter row */}
-              {showFilters && (
-                <TableRow>
-                  <TableCell padding="checkbox" />
-                  {visibleColumnDefs.map((col) => (
-                    <TableCell key={col.id} sx={{ minWidth: col.minWidth }}>
-                      {col.filterable ? (
-                        <TextField
-                          size="small"
-                          placeholder={`Filter ${col.label.toLowerCase()}...`}
-                          value={filters[col.id] || ''}
-                          onChange={(e) => setFilters({ ...filters, [col.id]: e.target.value })}
-                          fullWidth
-                        />
-                      ) : null}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              )}
               {/* Header row */}
               <TableRow>
                 <TableCell padding="checkbox">
@@ -632,6 +653,26 @@ export default function BackupList() {
                   </TableCell>
                 ))}
               </TableRow>
+              {/* Filter row - below header */}
+              {showFilters && (
+                <TableRow>
+                  <TableCell padding="checkbox" />
+                  {visibleColumnDefs.map((col) => (
+                    <TableCell key={col.id} sx={{ minWidth: col.minWidth, pt: 0 }}>
+                      {col.filterable ? (
+                        <TextField
+                          size="small"
+                          placeholder={`Filter...`}
+                          value={filters[col.id] || ''}
+                          onChange={(e) => setFilters({ ...filters, [col.id]: e.target.value })}
+                          fullWidth
+                          variant="standard"
+                        />
+                      ) : null}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              )}
             </TableHead>
             <TableBody>
               {processedBackups.length === 0 ? (

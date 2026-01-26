@@ -441,24 +441,6 @@ export default function RestoreList() {
           disableGutters
           sx={{ mb: 1, gap: 1, minHeight: 'auto', flexWrap: 'wrap' }}
         >
-          {selected.size > 0 && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Typography variant="body2" color="text.secondary">
-                {selected.size} selected
-              </Typography>
-              <Button
-                variant="contained"
-                color="error"
-                size="small"
-                startIcon={<Icon icon="mdi:delete" />}
-                onClick={handleDeleteSelected}
-                sx={{ whiteSpace: 'nowrap' }}
-              >
-                Delete Selected
-              </Button>
-            </Box>
-          )}
-
           <Box sx={{ flexGrow: 1 }} />
 
           {showSearch && (
@@ -483,6 +465,34 @@ export default function RestoreList() {
                 ),
               }}
             />
+          )}
+
+          {selected.size > 0 && (
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1,
+                bgcolor: 'action.selected',
+                borderRadius: 1,
+                px: 1.5,
+                py: 0.5,
+              }}
+            >
+              <Typography variant="body2" color="text.secondary">
+                {selected.size} selected
+              </Typography>
+              <Button
+                variant="contained"
+                color="error"
+                size="small"
+                startIcon={<Icon icon="mdi:delete" />}
+                onClick={handleDeleteSelected}
+                sx={{ whiteSpace: 'nowrap' }}
+              >
+                Delete Selected
+              </Button>
+            </Box>
           )}
 
           <Tooltip title={showSearch ? 'Hide search' : 'Show search'}>
@@ -528,25 +538,6 @@ export default function RestoreList() {
         <TableContainer component={Paper} variant="outlined">
           <Table size="small">
             <TableHead>
-              {/* Filter row */}
-              {showFilters && (
-                <TableRow>
-                  <TableCell padding="checkbox" />
-                  {visibleColumnDefs.map((col) => (
-                    <TableCell key={col.id} sx={{ minWidth: col.minWidth }}>
-                      {col.filterable ? (
-                        <TextField
-                          size="small"
-                          placeholder={`Filter ${col.label.toLowerCase()}...`}
-                          value={filters[col.id] || ''}
-                          onChange={(e) => setFilters({ ...filters, [col.id]: e.target.value })}
-                          fullWidth
-                        />
-                      ) : null}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              )}
               {/* Header row */}
               <TableRow>
                 <TableCell padding="checkbox">
@@ -575,6 +566,26 @@ export default function RestoreList() {
                   </TableCell>
                 ))}
               </TableRow>
+              {/* Filter row - below header */}
+              {showFilters && (
+                <TableRow>
+                  <TableCell padding="checkbox" />
+                  {visibleColumnDefs.map((col) => (
+                    <TableCell key={col.id} sx={{ minWidth: col.minWidth, pt: 0 }}>
+                      {col.filterable ? (
+                        <TextField
+                          size="small"
+                          placeholder={`Filter...`}
+                          value={filters[col.id] || ''}
+                          onChange={(e) => setFilters({ ...filters, [col.id]: e.target.value })}
+                          fullWidth
+                          variant="standard"
+                        />
+                      ) : null}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              )}
             </TableHead>
             <TableBody>
               {processedRestores.length === 0 ? (
