@@ -1,5 +1,5 @@
-# Use the official Node.js 21 image as the base image for building the plugins
-FROM node:21 AS builder
+# Use Node.js 22 LTS slim variant (required by vite, vitest, and other dependencies)
+FROM node:22-slim AS builder
 
 # Set the working directory inside the container
 WORKDIR /headlamp-plugins
@@ -13,30 +13,31 @@ RUN if [ -z "$PLUGIN" ]; then \
       exit 1; \
     fi
 
-# Create a directory for the plugin build
-RUN mkdir -p /headlamp-plugins/build/${PLUGIN}
+# Configure npm for better reliability in CI/QEMU environments
+RUN npm config set fetch-retry-mintimeout 20000 && \
+    npm config set fetch-retry-maxtimeout 120000 && \
+    npm config set fetch-retries 5
 
-# Copy the plugin source code into the container
+# Copy only package files first for better layer caching
+COPY ${PLUGIN}/package*.json /headlamp-plugins/${PLUGIN}/
+
+# Install dependencies with retry logic for QEMU builds
+WORKDIR /headlamp-plugins/${PLUGIN}
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci || npm ci || npm ci
+
+# Copy the rest of the plugin source code
 COPY ${PLUGIN} /headlamp-plugins/${PLUGIN}
 
-# Install dependencies for the specified plugin
-RUN echo "Installing deps for plugin $PLUGIN..."; \
-    cd /headlamp-plugins/$PLUGIN; \
-    npm ci
-
-# Build the specified plugin
-RUN echo "Building plugin $PLUGIN..."; \
-    cd /headlamp-plugins/$PLUGIN; \
-    npm run build
-
-# Extract the built plugin to the build directory
-RUN echo "Extracting plugin $PLUGIN..."; \
-    cd /headlamp-plugins/$PLUGIN; \
+# Build the plugin and extract to build directory
+RUN npm run build && \
+    mkdir -p /headlamp-plugins/build/${PLUGIN} && \
     npx --no-install headlamp-plugin extract . /headlamp-plugins/build/${PLUGIN}
 
-FROM alpine
+# Use minimal final image
+FROM alpine:3.20
 
-# Copy the built plugin files from the builder stage to the /plugins directory in the final image
+# Copy the built plugin files from the builder stage
 COPY --from=builder /headlamp-plugins/build/ /plugins/
 
 LABEL org.opencontainers.image.source=https://github.com/buttahtoast/headlamp-plugins

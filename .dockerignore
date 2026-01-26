@@ -1,0 +1,40 @@
+# Dependencies (will be installed fresh in container)
+**/node_modules
+
+# Build outputs
+**/dist
+**/build
+
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test and dev files
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+**/coverage
+
+# Documentation (keep README)
+CHANGELOG.md
+CONTRIBUTING.md
+LICENSE
+
+# Local env files
+.env
+.env.*

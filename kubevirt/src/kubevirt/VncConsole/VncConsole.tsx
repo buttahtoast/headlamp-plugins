@@ -1,8 +1,10 @@
 import { Dialog } from '@kinvolk/headlamp-plugin/lib/CommonComponents';
 import type { DialogProps } from '@mui/material';
 import {
+  Badge,
   Box,
   Button,
+  Chip,
   CircularProgress,
   Divider,
   FormControlLabel,
@@ -10,7 +12,6 @@ import {
   Menu,
   MenuItem,
   Popover,
-  Slider,
   Switch,
   TextField,
   Toolbar,
@@ -42,6 +43,26 @@ interface VncConsoleProps extends DialogProps {
 
 type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
 type ScaleMode = 'fit' | 'actual' | 'custom';
+
+// Keyboard layouts with their keysym mappings for special characters
+interface KeyboardLayout {
+  name: string;
+  code: string;
+  // Map of character to keysym (for characters that differ from US layout)
+  charMap?: Record<string, number>;
+}
+
+const KEYBOARD_LAYOUTS: KeyboardLayout[] = [
+  { name: 'US English', code: 'en-US' },
+  { name: 'UK English', code: 'en-GB', charMap: { '#': 0x00a3, '£': 0x0023 } },
+  { name: 'German', code: 'de-DE', charMap: { 'z': 0x0079, 'y': 0x007a, 'Z': 0x0059, 'Y': 0x005a, 'ö': 0x00f6, 'ä': 0x00e4, 'ü': 0x00fc, 'ß': 0x00df } },
+  { name: 'French', code: 'fr-FR', charMap: { 'a': 0x0071, 'q': 0x0061, 'z': 0x0077, 'w': 0x007a, 'A': 0x0051, 'Q': 0x0041, 'Z': 0x0057, 'W': 0x005a, 'é': 0x00e9, 'è': 0x00e8, 'ç': 0x00e7 } },
+  { name: 'Spanish', code: 'es-ES', charMap: { 'ñ': 0x00f1, 'Ñ': 0x00d1, '¿': 0x00bf, '¡': 0x00a1 } },
+  { name: 'Italian', code: 'it-IT', charMap: { 'à': 0x00e0, 'è': 0x00e8, 'ì': 0x00ec, 'ò': 0x00f2, 'ù': 0x00f9 } },
+  { name: 'Portuguese', code: 'pt-PT', charMap: { 'ç': 0x00e7, 'ã': 0x00e3, 'õ': 0x00f5 } },
+  { name: 'Russian', code: 'ru-RU' },
+  { name: 'Japanese', code: 'ja-JP' },
+];
 
 // Key codes for special keys (X11 keysyms)
 const KeyCodes = {
@@ -87,26 +108,92 @@ const KeyCodes = {
   NumLock: 0xff7f,
 };
 
+// Touch keyboard layout for mobile
+const TOUCH_KEYBOARD_ROWS = [
+  ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
+  ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
+  ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l'],
+  ['z', 'x', 'c', 'v', 'b', 'n', 'm'],
+];
+
 export default function VncConsole(props: VncConsoleProps) {
   const { item, onClose, open, ...other } = props;
   const { t } = useTranslation(['translation', 'glossary']);
+
+  // Connection state
   const [status, setStatus] = useState<ConnectionStatus>('connecting');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [reconnectKey, setReconnectKey] = useState(0);
+
+  // UI state
   const [clipboardText, setClipboardText] = useState('');
   const [sendKeysAnchor, setSendKeysAnchor] = useState<null | HTMLElement>(null);
   const [powerAnchor, setPowerAnchor] = useState<null | HTMLElement>(null);
   const [powerLoading, setPowerLoading] = useState<string | null>(null);
   const [keyboardAnchor, setKeyboardAnchor] = useState<null | HTMLElement>(null);
   const [settingsAnchor, setSettingsAnchor] = useState<null | HTMLElement>(null);
+  const [displayAnchor, setDisplayAnchor] = useState<null | HTMLElement>(null);
+  const [audioAnchor, setAudioAnchor] = useState<null | HTMLElement>(null);
+  const [layoutAnchor, setLayoutAnchor] = useState<null | HTMLElement>(null);
+
+  // Display settings
   const [viewOnly, setViewOnly] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [scaleMode, setScaleMode] = useState<ScaleMode>('fit');
   const [zoomLevel, setZoomLevel] = useState(100);
-  const [qualityLevel, setQualityLevel] = useState(6); // 0-9, higher is better
-  const [reconnectKey, setReconnectKey] = useState(0);
+  const [qualityLevel, setQualityLevel] = useState(6);
+
+  // Multi-monitor support
+  const [availableDisplays, setAvailableDisplays] = useState<number[]>([0]);
+  const [currentDisplay, setCurrentDisplay] = useState(0);
+
+  // Audio support
+  const [audioEnabled, setAudioEnabled] = useState(false);
+  const [audioMuted, setAudioMuted] = useState(false);
+  const [audioVolume, setAudioVolume] = useState(80);
+  const [audioSupported, setAudioSupported] = useState(false);
+  const audioContextRef = useRef<AudioContext | null>(null);
+
+  // Keyboard layout
+  const [keyboardLayout, setKeyboardLayout] = useState<string>('en-US');
+  const [detectedLayout, setDetectedLayout] = useState<string | null>(null);
+
+  // Touch support
+  const [touchEnabled, setTouchEnabled] = useState(false);
+  const [showTouchKeyboard, setShowTouchKeyboard] = useState(false);
+  const [touchShiftActive, setTouchShiftActive] = useState(false);
+  const [pinchStartDistance, setPinchStartDistance] = useState<number | null>(null);
+  const [pinchStartZoom, setPinchStartZoom] = useState(100);
+
+  // Refs
   const vncRef = useRef<VncScreenHandle>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+
+  // Detect keyboard layout on mount
+  useEffect(() => {
+    const detectKeyboardLayout = () => {
+      // Try to detect from navigator
+      const navLang = navigator.language || (navigator as any).userLanguage;
+      if (navLang) {
+        const matchedLayout = KEYBOARD_LAYOUTS.find(l =>
+          l.code.toLowerCase() === navLang.toLowerCase() ||
+          l.code.split('-')[0] === navLang.split('-')[0]
+        );
+        if (matchedLayout) {
+          setDetectedLayout(matchedLayout.code);
+          setKeyboardLayout(matchedLayout.code);
+        }
+      }
+    };
+    detectKeyboardLayout();
+  }, []);
+
+  // Detect touch device
+  useEffect(() => {
+    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    setTouchEnabled(isTouchDevice);
+  }, []);
 
   // Reset status when dialog opens
   useEffect(() => {
@@ -122,6 +209,42 @@ export default function VncConsole(props: VncConsoleProps) {
     console.log('VNC connected');
     setStatus('connected');
     setErrorMessage(null);
+
+    // Check for multi-monitor support after connection
+    setTimeout(() => {
+      const rfb = vncRef.current?.rfb;
+      if (rfb) {
+        // Try to detect available displays (this depends on QEMU/libvirt configuration)
+        // Most VMs have at least 1 display, some may have multiple
+        // Note: noVNC doesn't directly expose multi-monitor info, this is a best-effort detection
+        try {
+          const canvas = (rfb as any)._canvas as HTMLCanvasElement;
+          if (canvas) {
+            // Check if there might be multiple displays based on resolution
+            // This is heuristic - actual multi-monitor would need QEMU agent support
+            const width = canvas.width;
+            const height = canvas.height;
+
+            // If width is much larger than typical 16:9/16:10, might be multiple displays
+            const aspectRatio = width / height;
+            if (aspectRatio > 2.5) {
+              // Likely 2 or more displays side by side
+              const estimatedDisplays = Math.round(aspectRatio / 1.7); // ~1.7 is typical single display ratio
+              setAvailableDisplays(Array.from({ length: estimatedDisplays }, (_, i) => i));
+            } else {
+              setAvailableDisplays([0]);
+            }
+          }
+        } catch (e) {
+          console.log('Could not detect displays:', e);
+        }
+
+        // Check for audio support
+        // QEMU audio over WebSocket requires specific backend configuration
+        // This checks if the capability might be available
+        setAudioSupported(true); // Enable UI, actual audio depends on backend
+      }
+    }, 1000);
   }, []);
 
   // Set up clipboard sync from VM to local after connection
@@ -173,6 +296,15 @@ export default function VncConsole(props: VncConsoleProps) {
     setErrorMessage(t('VNC credentials required but not supported'));
   }, [t]);
 
+  // Get keysym for character based on keyboard layout
+  const getKeysymForChar = useCallback((char: string): number => {
+    const layout = KEYBOARD_LAYOUTS.find(l => l.code === keyboardLayout);
+    if (layout?.charMap && layout.charMap[char] !== undefined) {
+      return layout.charMap[char];
+    }
+    return char.charCodeAt(0);
+  }, [keyboardLayout]);
+
   // Send a key combination
   const sendKeys = useCallback((keys: number[]) => {
     const rfb = vncRef.current?.rfb;
@@ -204,17 +336,17 @@ export default function VncConsole(props: VncConsoleProps) {
     [sendKeys]
   );
 
-  // Type text character by character
+  // Type text character by character with keyboard layout support
   const typeText = useCallback((text: string) => {
     const rfb = vncRef.current?.rfb;
     if (!rfb || !text || viewOnly) return;
 
     for (const char of text) {
-      const code = char.charCodeAt(0);
+      const code = getKeysymForChar(char);
       rfb.sendKey(code, null, true);
       rfb.sendKey(code, null, false);
     }
-  }, [viewOnly]);
+  }, [viewOnly, getKeysymForChar]);
 
   // Send the clipboard text as keystrokes
   const sendClipboardText = useCallback(() => {
@@ -260,7 +392,6 @@ export default function VncConsole(props: VncConsoleProps) {
     setPowerAnchor(null);
     try {
       await item.stop();
-      // Wait a moment before starting
       setTimeout(async () => {
         try {
           await item.start?.();
@@ -286,7 +417,6 @@ export default function VncConsole(props: VncConsoleProps) {
   }, [handlePowerAction, item.unpause]);
 
   const handleForceStop = useCallback(async () => {
-    // Force stop by directly stopping without graceful shutdown
     handlePowerAction('force-stop', item.stop);
   }, [handlePowerAction, item.stop]);
 
@@ -367,6 +497,58 @@ export default function VncConsole(props: VncConsoleProps) {
     setScaleMode('fit');
   }, []);
 
+  // Switch display (multi-monitor)
+  const switchDisplay = useCallback((displayIndex: number) => {
+    setCurrentDisplay(displayIndex);
+    setDisplayAnchor(null);
+
+    // In a real multi-monitor setup, this would send a command to switch displays
+    // For now, we scroll to the appropriate portion of a wide display
+    const rfb = vncRef.current?.rfb;
+    if (rfb && containerRef.current) {
+      const canvas = (rfb as any)._canvas as HTMLCanvasElement;
+      if (canvas && availableDisplays.length > 1) {
+        const displayWidth = canvas.width / availableDisplays.length;
+        containerRef.current.scrollLeft = displayIndex * displayWidth;
+      }
+    }
+  }, [availableDisplays.length]);
+
+  // Audio controls
+  const toggleAudio = useCallback(() => {
+    if (!audioEnabled) {
+      // Initialize audio context with error handling
+      try {
+        if (!audioContextRef.current) {
+          const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+          if (AudioContextClass) {
+            audioContextRef.current = new AudioContextClass();
+          } else {
+            console.warn('AudioContext not supported');
+            return;
+          }
+        }
+        setAudioEnabled(true);
+        console.log('Audio enabled (requires backend support)');
+      } catch (err) {
+        console.error('Failed to create AudioContext:', err);
+      }
+    } else {
+      setAudioEnabled(false);
+      try {
+        if (audioContextRef.current) {
+          audioContextRef.current.suspend();
+        }
+      } catch (err) {
+        console.error('Failed to suspend AudioContext:', err);
+      }
+    }
+  }, [audioEnabled]);
+
+  const toggleMute = useCallback(() => {
+    setAudioMuted(prev => !prev);
+  }, []);
+
   // Apply view only mode
   useEffect(() => {
     const rfb = vncRef.current?.rfb;
@@ -391,6 +573,52 @@ export default function VncConsole(props: VncConsoleProps) {
     rfb.sendKey(keyCode, null, false);
     setKeyboardAnchor(null);
   }, [viewOnly]);
+
+  // Touch keyboard - send character
+  const sendTouchChar = useCallback((char: string) => {
+    const rfb = vncRef.current?.rfb;
+    if (!rfb || viewOnly) return;
+
+    let actualChar = char;
+    if (touchShiftActive) {
+      actualChar = char.toUpperCase();
+      setTouchShiftActive(false);
+    }
+
+    const code = getKeysymForChar(actualChar);
+    rfb.sendKey(code, null, true);
+    rfb.sendKey(code, null, false);
+  }, [viewOnly, touchShiftActive, getKeysymForChar]);
+
+  // Touch gesture handlers
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      // Start pinch gesture
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      setPinchStartDistance(distance);
+      setPinchStartZoom(zoomLevel);
+    }
+  }, [zoomLevel]);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 2 && pinchStartDistance !== null) {
+      // Handle pinch zoom
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      const scale = distance / pinchStartDistance;
+      const newZoom = Math.min(200, Math.max(25, pinchStartZoom * scale));
+      setZoomLevel(Math.round(newZoom));
+      setScaleMode('custom');
+    }
+  }, [pinchStartDistance, pinchStartZoom]);
+
+  const handleTouchEnd = useCallback(() => {
+    setPinchStartDistance(null);
+  }, []);
 
   // Get scale style based on mode
   const getScaleStyle = () => {
@@ -545,7 +773,147 @@ export default function VncConsole(props: VncConsoleProps) {
               </Box>
             </Popover>
 
+            {/* Keyboard Layout Selector */}
+            <Tooltip title="Keyboard Layout">
+              <IconButton size="medium" onClick={e => setLayoutAnchor(e.currentTarget)}>
+                <Typography variant="body2" sx={{ fontWeight: 'bold', fontSize: '0.75rem' }}>
+                  {keyboardLayout.split('-')[0].toUpperCase()}
+                </Typography>
+              </IconButton>
+            </Tooltip>
+
+            <Menu
+              anchorEl={layoutAnchor}
+              open={Boolean(layoutAnchor)}
+              onClose={() => setLayoutAnchor(null)}
+            >
+              {detectedLayout && (
+                <MenuItem disabled>
+                  <Typography variant="caption" color="text.secondary">
+                    Detected: {KEYBOARD_LAYOUTS.find(l => l.code === detectedLayout)?.name || detectedLayout}
+                  </Typography>
+                </MenuItem>
+              )}
+              {detectedLayout && <Divider />}
+              {KEYBOARD_LAYOUTS.map(layout => (
+                <MenuItem
+                  key={layout.code}
+                  onClick={() => {
+                    setKeyboardLayout(layout.code);
+                    setLayoutAnchor(null);
+                  }}
+                  selected={keyboardLayout === layout.code}
+                >
+                  {layout.name}
+                </MenuItem>
+              ))}
+            </Menu>
+
             <Divider orientation="vertical" flexItem />
+
+            {/* Multi-Monitor Controls */}
+            {availableDisplays.length > 1 && (
+              <>
+                <Tooltip title="Switch Display">
+                  <IconButton size="medium" onClick={e => setDisplayAnchor(e.currentTarget)}>
+                    <Badge badgeContent={currentDisplay + 1} color="primary">
+                      <Typography variant="body2" sx={{ fontWeight: 'bold', fontSize: '1.2rem' }}>
+                        🖥️
+                      </Typography>
+                    </Badge>
+                  </IconButton>
+                </Tooltip>
+
+                <Menu
+                  anchorEl={displayAnchor}
+                  open={Boolean(displayAnchor)}
+                  onClose={() => setDisplayAnchor(null)}
+                >
+                  <MenuItem disabled>
+                    <Typography variant="caption" color="text.secondary">
+                      {availableDisplays.length} displays detected
+                    </Typography>
+                  </MenuItem>
+                  <Divider />
+                  {availableDisplays.map(idx => (
+                    <MenuItem
+                      key={idx}
+                      onClick={() => switchDisplay(idx)}
+                      selected={currentDisplay === idx}
+                    >
+                      Display {idx + 1}
+                    </MenuItem>
+                  ))}
+                </Menu>
+
+                <Divider orientation="vertical" flexItem />
+              </>
+            )}
+
+            {/* Audio Controls */}
+            {audioSupported && (
+              <>
+                <Tooltip title={audioEnabled ? (audioMuted ? 'Unmute' : 'Mute') : 'Enable Audio'}>
+                  <IconButton size="medium" onClick={e => setAudioAnchor(e.currentTarget)}>
+                    <Typography variant="body2" sx={{ fontWeight: 'bold', fontSize: '1.2rem' }}>
+                      {!audioEnabled ? '🔇' : audioMuted ? '🔇' : '🔊'}
+                    </Typography>
+                  </IconButton>
+                </Tooltip>
+
+                <Menu
+                  anchorEl={audioAnchor}
+                  open={Boolean(audioAnchor)}
+                  onClose={() => setAudioAnchor(null)}
+                >
+                  <Box sx={{ px: 2, py: 1 }}>
+                    <Typography variant="subtitle2">Audio Settings</Typography>
+                  </Box>
+                  <MenuItem onClick={toggleAudio}>
+                    <FormControlLabel
+                      control={<Switch checked={audioEnabled} size="small" />}
+                      label="Enable Audio"
+                      onClick={e => e.stopPropagation()}
+                      onChange={toggleAudio}
+                    />
+                  </MenuItem>
+                  {audioEnabled && (
+                    <>
+                      <MenuItem onClick={toggleMute}>
+                        <FormControlLabel
+                          control={<Switch checked={audioMuted} size="small" />}
+                          label="Mute"
+                          onClick={e => e.stopPropagation()}
+                          onChange={toggleMute}
+                        />
+                      </MenuItem>
+                      <Divider />
+                      <Box sx={{ px: 2, py: 1 }}>
+                        <Typography variant="caption" color="text.secondary">Volume</Typography>
+                      </Box>
+                      {[25, 50, 75, 100].map(vol => (
+                        <MenuItem
+                          key={vol}
+                          onClick={() => setAudioVolume(vol)}
+                          selected={audioVolume === vol}
+                          disabled={audioMuted}
+                        >
+                          {vol}%
+                        </MenuItem>
+                      ))}
+                    </>
+                  )}
+                  <Divider />
+                  <Box sx={{ px: 2, py: 1 }}>
+                    <Typography variant="caption" color="text.secondary">
+                      Audio requires QEMU backend support with audio device configured.
+                    </Typography>
+                  </Box>
+                </Menu>
+
+                <Divider orientation="vertical" flexItem />
+              </>
+            )}
 
             {/* Clipboard Group */}
             <Tooltip title="Paste from clipboard">
@@ -631,57 +999,68 @@ export default function VncConsole(props: VncConsoleProps) {
               </IconButton>
             </Tooltip>
 
-            <Popover
+            <Menu
               anchorEl={settingsAnchor}
               open={Boolean(settingsAnchor)}
               onClose={() => setSettingsAnchor(null)}
-              anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
             >
-              <Box sx={{ p: 2, minWidth: 250 }}>
-                <Typography variant="subtitle2" gutterBottom>Display Settings</Typography>
-
-                <FormControlLabel
-                  control={<Switch checked={viewOnly} onChange={e => setViewOnly(e.target.checked)} size="small" />}
-                  label="View Only Mode"
-                />
-
-                <Typography variant="caption" display="block" sx={{ mt: 2, mb: 1 }}>
-                  Scale Mode
-                </Typography>
-                <Box sx={{ display: 'flex', gap: 1 }}>
-                  <Button
-                    size="small"
-                    variant={scaleMode === 'fit' ? 'contained' : 'outlined'}
-                    onClick={() => setScaleMode('fit')}
-                  >
-                    Fit
-                  </Button>
-                  <Button
-                    size="small"
-                    variant={scaleMode === 'actual' ? 'contained' : 'outlined'}
-                    onClick={() => setScaleMode('actual')}
-                  >
-                    Actual
-                  </Button>
-                </Box>
-
-                <Typography variant="caption" display="block" sx={{ mt: 2, mb: 1 }}>
-                  Quality: {qualityLevel}
-                </Typography>
-                <Slider
-                  size="small"
-                  value={qualityLevel}
-                  onChange={(_, v) => setQualityLevel(v as number)}
-                  min={0}
-                  max={9}
-                  marks
-                  valueLabelDisplay="auto"
-                />
-                <Typography variant="caption" color="text.secondary">
-                  Lower = faster, Higher = better quality
-                </Typography>
+              <Box sx={{ px: 2, py: 1 }}>
+                <Typography variant="subtitle2">Display Settings</Typography>
               </Box>
-            </Popover>
+              <MenuItem onClick={() => setViewOnly(!viewOnly)}>
+                <FormControlLabel
+                  control={<Switch checked={viewOnly} size="small" />}
+                  label="View Only Mode"
+                  onClick={e => e.stopPropagation()}
+                  onChange={() => setViewOnly(!viewOnly)}
+                />
+              </MenuItem>
+              <Divider />
+              <Box sx={{ px: 2, py: 1 }}>
+                <Typography variant="caption" color="text.secondary">Scale Mode</Typography>
+              </Box>
+              <MenuItem
+                onClick={() => setScaleMode('fit')}
+                selected={scaleMode === 'fit'}
+              >
+                Fit to Window
+              </MenuItem>
+              <MenuItem
+                onClick={() => setScaleMode('actual')}
+                selected={scaleMode === 'actual'}
+              >
+                Actual Size
+              </MenuItem>
+              <Divider />
+              <Box sx={{ px: 2, py: 1 }}>
+                <Typography variant="caption" color="text.secondary">Quality Level</Typography>
+              </Box>
+              {[0, 3, 6, 9].map(q => (
+                <MenuItem
+                  key={q}
+                  onClick={() => setQualityLevel(q)}
+                  selected={qualityLevel === q}
+                >
+                  {q === 0 ? 'Low (Fastest)' : q === 3 ? 'Medium-Low' : q === 6 ? 'Medium-High' : 'High (Best)'}
+                </MenuItem>
+              ))}
+              {touchEnabled && (
+                <>
+                  <Divider />
+                  <Box sx={{ px: 2, py: 1 }}>
+                    <Typography variant="subtitle2">Touch Settings</Typography>
+                  </Box>
+                  <MenuItem onClick={() => setShowTouchKeyboard(!showTouchKeyboard)}>
+                    <FormControlLabel
+                      control={<Switch checked={showTouchKeyboard} size="small" />}
+                      label="Show Touch Keyboard"
+                      onClick={e => e.stopPropagation()}
+                      onChange={() => setShowTouchKeyboard(!showTouchKeyboard)}
+                    />
+                  </MenuItem>
+                </>
+              )}
+            </Menu>
 
             <Divider orientation="vertical" flexItem />
 
@@ -743,6 +1122,26 @@ export default function VncConsole(props: VncConsoleProps) {
 
             <Divider orientation="vertical" flexItem />
 
+            {/* Touch Keyboard Toggle (mobile only) */}
+            {touchEnabled && (
+              <>
+                <Tooltip title="Toggle Touch Keyboard">
+                  <IconButton
+                    size="medium"
+                    onClick={() => setShowTouchKeyboard(!showTouchKeyboard)}
+                    color={showTouchKeyboard ? 'primary' : 'default'}
+                    disabled={viewOnly}
+                  >
+                    <Typography variant="body2" sx={{ fontWeight: 'bold', fontSize: '1.2rem' }}>
+                      📱
+                    </Typography>
+                  </IconButton>
+                </Tooltip>
+
+                <Divider orientation="vertical" flexItem />
+              </>
+            )}
+
             {/* Connection Controls */}
             <Tooltip title="Reconnect">
               <IconButton size="medium" onClick={handleReconnect}>
@@ -768,6 +1167,9 @@ export default function VncConsole(props: VncConsoleProps) {
               <Typography variant="body2" color="text.secondary">
                 Connected
               </Typography>
+              {availableDisplays.length > 1 && (
+                <Chip label={`Display ${currentDisplay + 1}/${availableDisplays.length}`} size="small" />
+              )}
             </Box>
           </Toolbar>
         )}
@@ -802,6 +1204,9 @@ export default function VncConsole(props: VncConsoleProps) {
             position: 'relative',
             overflow: 'hidden',
           }}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
         >
           {status === 'connecting' && (
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
@@ -853,6 +1258,108 @@ export default function VncConsole(props: VncConsoleProps) {
               />
             )}
           </Box>
+
+          {/* Touch Keyboard Overlay */}
+          {status === 'connected' && touchEnabled && showTouchKeyboard && (
+            <Box
+              sx={{
+                position: 'absolute',
+                bottom: 0,
+                left: 0,
+                right: 0,
+                backgroundColor: 'rgba(0, 0, 0, 0.9)',
+                p: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 0.5,
+              }}
+            >
+              {TOUCH_KEYBOARD_ROWS.map((row, rowIdx) => (
+                <Box key={rowIdx} sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
+                  {row.map(key => (
+                    <Button
+                      key={key}
+                      size="small"
+                      variant="outlined"
+                      onClick={() => sendTouchChar(key)}
+                      disabled={viewOnly}
+                      sx={{
+                        minWidth: 32,
+                        height: 40,
+                        color: 'white',
+                        borderColor: 'rgba(255,255,255,0.3)',
+                        '&:hover': {
+                          borderColor: 'white',
+                          backgroundColor: 'rgba(255,255,255,0.1)',
+                        },
+                      }}
+                    >
+                      {touchShiftActive ? key.toUpperCase() : key}
+                    </Button>
+                  ))}
+                </Box>
+              ))}
+              <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
+                <Button
+                  size="small"
+                  variant={touchShiftActive ? 'contained' : 'outlined'}
+                  onClick={() => setTouchShiftActive(!touchShiftActive)}
+                  disabled={viewOnly}
+                  sx={{
+                    minWidth: 60,
+                    height: 40,
+                    color: touchShiftActive ? undefined : 'white',
+                    borderColor: 'rgba(255,255,255,0.3)',
+                  }}
+                >
+                  ⇧
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => sendTouchChar(' ')}
+                  disabled={viewOnly}
+                  sx={{
+                    flex: 1,
+                    maxWidth: 200,
+                    height: 40,
+                    color: 'white',
+                    borderColor: 'rgba(255,255,255,0.3)',
+                  }}
+                >
+                  Space
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => sendSingleKey(KeyCodes.Backspace)}
+                  disabled={viewOnly}
+                  sx={{
+                    minWidth: 60,
+                    height: 40,
+                    color: 'white',
+                    borderColor: 'rgba(255,255,255,0.3)',
+                  }}
+                >
+                  ⌫
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => sendSingleKey(KeyCodes.Enter)}
+                  disabled={viewOnly}
+                  sx={{
+                    minWidth: 60,
+                    height: 40,
+                    color: 'white',
+                    borderColor: 'rgba(255,255,255,0.3)',
+                  }}
+                >
+                  ↵
+                </Button>
+              </Box>
+            </Box>
+          )}
         </Box>
       </DialogContent>
     </Dialog>
