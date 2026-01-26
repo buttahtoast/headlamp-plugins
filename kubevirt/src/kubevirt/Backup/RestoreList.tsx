@@ -21,72 +21,14 @@ import { Icon } from '@iconify/react';
 import { useSnackbar } from 'notistack';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ResourceList, ResourceListColumn, SelectionToolbar } from '../components/ResourceList';
-
-interface VeleroRestore {
-  apiVersion: string;
-  kind: string;
-  metadata: {
-    name: string;
-    namespace: string;
-    creationTimestamp: string;
-    labels?: Record<string, string>;
-  };
-  spec: {
-    backupName: string;
-    includedNamespaces?: string[];
-    excludedNamespaces?: string[];
-    namespaceMapping?: Record<string, string>;
-  };
-  status?: {
-    phase: string;
-    startTimestamp?: string;
-    completionTimestamp?: string;
-    errors?: number;
-    warnings?: number;
-    failureReason?: string;
-  };
-}
-
-interface VeleroBackup {
-  metadata: {
-    name: string;
-    namespace: string;
-    labels?: Record<string, string>;
-  };
-  spec: {
-    includedNamespaces?: string[];
-  };
-  status?: {
-    phase: string;
-  };
-}
-
-// Helper functions - defined before useMemo hooks
-const getStatusColor = (phase: string): 'success' | 'error' | 'warning' | 'info' | 'default' => {
-  switch (phase) {
-    case 'Completed': return 'success';
-    case 'Failed': return 'error';
-    case 'FailedValidation': return 'error';
-    case 'InProgress': return 'warning';
-    case 'PartiallyFailed': return 'warning';
-    case 'New': return 'info';
-    default: return 'default';
-  }
-};
-
-const formatDuration = (start?: string, end?: string): string => {
-  if (!start) return '-';
-  const startDate = new Date(start);
-  const endDate = end ? new Date(end) : new Date();
-  const diffMs = endDate.getTime() - startDate.getTime();
-  const diffSec = Math.floor(diffMs / 1000);
-  const diffMin = Math.floor(diffSec / 60);
-  const diffHour = Math.floor(diffMin / 60);
-
-  if (diffHour > 0) return `${diffHour}h ${diffMin % 60}m`;
-  if (diffMin > 0) return `${diffMin}m ${diffSec % 60}s`;
-  return `${diffSec}s`;
-};
+import {
+  VeleroBackup,
+  VeleroRestore,
+  createRestore,
+  getVeleroStatusColor,
+  formatVeleroDateTime,
+  formatVeleroDuration,
+} from '../utils/velero';
 
 const getDurationMs = (restore: VeleroRestore): number => {
   if (!restore.status?.startTimestamp) return 0;
@@ -95,17 +37,6 @@ const getDurationMs = (restore: VeleroRestore): number => {
     ? new Date(restore.status.completionTimestamp).getTime()
     : Date.now();
   return end - start;
-};
-
-const formatDateTime = (dateStr?: string): string => {
-  if (!dateStr) return '-';
-  const date = new Date(dateStr);
-  return date.toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 };
 
 export default function RestoreList() {
@@ -195,7 +126,7 @@ export default function RestoreList() {
       accessorFn: (restore) => restore.status?.phase || 'New',
       Cell: ({ row }) => {
         const phase = row.original.status?.phase || 'New';
-        return <Chip label={phase} size="small" color={getStatusColor(phase)} />;
+        return <Chip label={phase} size="small" color={getVeleroStatusColor(phase)} />;
       },
       filterVariant: 'select',
       filterSelectOptions: statusOptions,
@@ -233,14 +164,14 @@ export default function RestoreList() {
       id: 'started',
       header: 'Started',
       accessorFn: (restore) => restore.status?.startTimestamp ? new Date(restore.status.startTimestamp).getTime() : 0,
-      Cell: ({ row }) => formatDateTime(row.original.status?.startTimestamp),
+      Cell: ({ row }) => formatVeleroDateTime(row.original.status?.startTimestamp),
       enableColumnFilter: false,
     },
     {
       id: 'duration',
       header: 'Duration',
       accessorFn: (restore) => getDurationMs(restore),
-      Cell: ({ row }) => formatDuration(row.original.status?.startTimestamp, row.original.status?.completionTimestamp),
+      Cell: ({ row }) => formatVeleroDuration(row.original.status?.startTimestamp, row.original.status?.completionTimestamp),
       enableColumnFilter: false,
       show: false,
     },
@@ -272,31 +203,15 @@ export default function RestoreList() {
     }
 
     const backup = backups.find(b => b.metadata.name === selectedBackup);
-    const restoreName = `${selectedBackup}-restore-${Date.now()}`;
-
-    const restore: any = {
-      apiVersion: 'velero.io/v1',
-      kind: 'Restore',
-      metadata: {
-        name: restoreName,
-        namespace: 'velero',
-      },
-      spec: {
-        backupName: selectedBackup,
-      },
-    };
-
-    if (restoreNamespace && backup?.spec?.includedNamespaces?.[0]) {
-      restore.spec.namespaceMapping = {
-        [backup.spec.includedNamespaces[0]]: restoreNamespace,
-      };
+    if (!backup) {
+      enqueueSnackbar('Backup not found', { variant: 'error' });
+      return;
     }
 
     try {
-      await ApiProxy.request('/apis/velero.io/v1/namespaces/velero/restores', {
-        method: 'POST',
-        body: JSON.stringify(restore),
-        headers: { 'Content-Type': 'application/json' },
+      await createRestore({
+        backup,
+        targetNamespace: restoreNamespace || undefined,
       });
 
       enqueueSnackbar('Restore initiated successfully', { variant: 'success' });

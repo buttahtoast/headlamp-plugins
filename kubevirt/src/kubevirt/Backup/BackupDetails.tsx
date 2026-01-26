@@ -25,73 +25,13 @@ import { useSnackbar } from 'notistack';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router-dom';
-
-interface VeleroBackup {
-  metadata: {
-    name: string;
-    namespace: string;
-    creationTimestamp: string;
-    labels?: Record<string, string>;
-    uid?: string;
-  };
-  spec: {
-    includedNamespaces?: string[];
-    excludedNamespaces?: string[];
-    includedResources?: string[];
-    excludedResources?: string[];
-    labelSelector?: {
-      matchLabels?: Record<string, string>;
-    };
-    storageLocation?: string;
-    volumeSnapshotLocations?: string[];
-    ttl?: string;
-    snapshotVolumes?: boolean;
-    hooks?: any;
-  };
-  status?: {
-    phase: string;
-    startTimestamp?: string;
-    completionTimestamp?: string;
-    expiration?: string;
-    errors?: number;
-    warnings?: number;
-    progress?: {
-      itemsBackedUp?: number;
-      totalItems?: number;
-    };
-    volumeSnapshotsAttempted?: number;
-    volumeSnapshotsCompleted?: number;
-    failureReason?: string;
-    validationErrors?: string[];
-  };
-}
-
-interface VeleroRestore {
-  metadata: {
-    name: string;
-    namespace: string;
-    creationTimestamp: string;
-  };
-  spec: {
-    backupName: string;
-    includedNamespaces?: string[];
-    namespaceMapping?: Record<string, string>;
-  };
-  status?: {
-    phase: string;
-    startTimestamp?: string;
-    completionTimestamp?: string;
-    errors?: number;
-    warnings?: number;
-    failureReason?: string;
-  };
-}
-
-interface BackupLog {
-  timestamp: string;
-  level: string;
-  message: string;
-}
+import {
+  VeleroBackup,
+  VeleroRestore,
+  createRestore,
+  getVeleroStatusColor,
+  formatVeleroDuration,
+} from '../utils/velero';
 
 export default function BackupDetails() {
   const { t } = useTranslation('glossary');
@@ -135,30 +75,10 @@ export default function BackupDetails() {
   const handleCreateRestore = async () => {
     if (!backup) return;
 
-    const restoreName = `${backup.metadata.name}-restore-${Date.now()}`;
-    const restore: any = {
-      apiVersion: 'velero.io/v1',
-      kind: 'Restore',
-      metadata: {
-        name: restoreName,
-        namespace: 'velero',
-      },
-      spec: {
-        backupName: backup.metadata.name,
-      },
-    };
-
-    if (restoreNamespace && backup.spec?.includedNamespaces?.[0]) {
-      restore.spec.namespaceMapping = {
-        [backup.spec.includedNamespaces[0]]: restoreNamespace,
-      };
-    }
-
     try {
-      await ApiProxy.request('/apis/velero.io/v1/namespaces/velero/restores', {
-        method: 'POST',
-        body: JSON.stringify(restore),
-        headers: { 'Content-Type': 'application/json' },
+      await createRestore({
+        backup,
+        targetNamespace: restoreNamespace || undefined,
       });
 
       enqueueSnackbar('Restore initiated successfully', { variant: 'success' });
@@ -192,33 +112,6 @@ export default function BackupDetails() {
     }
   };
 
-  // Get status color
-  const getStatusColor = (phase: string): 'success' | 'error' | 'warning' | 'default' => {
-    switch (phase) {
-      case 'Completed': return 'success';
-      case 'Failed': return 'error';
-      case 'FailedValidation': return 'error';
-      case 'InProgress': return 'warning';
-      case 'PartiallyFailed': return 'warning';
-      case 'New': return 'default';
-      default: return 'default';
-    }
-  };
-
-  // Format duration
-  const formatDuration = (start?: string, end?: string): string => {
-    if (!start) return '-';
-    const startDate = new Date(start);
-    const endDate = end ? new Date(end) : new Date();
-    const diffMs = endDate.getTime() - startDate.getTime();
-    const diffSec = Math.floor(diffMs / 1000);
-    const diffMin = Math.floor(diffSec / 60);
-    const diffHour = Math.floor(diffMin / 60);
-
-    if (diffHour > 0) return `${diffHour}h ${diffMin % 60}m`;
-    if (diffMin > 0) return `${diffMin}m ${diffSec % 60}s`;
-    return `${diffSec}s`;
-  };
 
   // Format relative time
   const formatRelativeTime = (timestamp?: string): string => {
@@ -279,7 +172,7 @@ export default function BackupDetails() {
             <Typography variant="h4">{backup.metadata.name}</Typography>
             <Chip
               label={backup.status?.phase || 'Unknown'}
-              color={getStatusColor(backup.status?.phase || '')}
+              color={getVeleroStatusColor(backup.status?.phase || '')}
               size="small"
             />
           </Box>
@@ -324,7 +217,7 @@ export default function BackupDetails() {
               <Typography variant="subtitle2" color="text.secondary">Phase</Typography>
               <Chip
                 label={backup.status?.phase || 'Unknown'}
-                color={getStatusColor(backup.status?.phase || '')}
+                color={getVeleroStatusColor(backup.status?.phase || '')}
                 sx={{ mt: 1 }}
               />
             </Paper>
@@ -333,7 +226,7 @@ export default function BackupDetails() {
             <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
               <Typography variant="subtitle2" color="text.secondary">Duration</Typography>
               <Typography variant="h6" sx={{ mt: 1 }}>
-                {formatDuration(backup.status?.startTimestamp, backup.status?.completionTimestamp)}
+                {formatVeleroDuration(backup.status?.startTimestamp, backup.status?.completionTimestamp)}
               </Typography>
             </Paper>
           </Grid>
@@ -558,7 +451,7 @@ export default function BackupDetails() {
                     <TableCell>
                       <Chip
                         label={restore.status?.phase || 'Unknown'}
-                        color={getStatusColor(restore.status?.phase || '')}
+                        color={getVeleroStatusColor(restore.status?.phase || '')}
                         size="small"
                       />
                     </TableCell>

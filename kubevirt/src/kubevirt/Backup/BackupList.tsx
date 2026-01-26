@@ -23,77 +23,14 @@ import { Icon } from '@iconify/react';
 import { useSnackbar } from 'notistack';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ResourceList, ResourceListColumn, SelectionToolbar } from '../components/ResourceList';
+import {
+  VeleroBackup,
+  getVMNameFromBackup,
+  getBackupNamespace,
+  getVeleroStatusColor,
+  formatVeleroDateTime,
+} from '../utils/velero';
 import VirtualMachine from '../VirtualMachines/VirtualMachine';
-
-interface VeleroBackup {
-  apiVersion: string;
-  kind: string;
-  metadata: {
-    name: string;
-    namespace: string;
-    creationTimestamp: string;
-    labels?: Record<string, string>;
-  };
-  spec: {
-    includedNamespaces?: string[];
-    includedResources?: string[];
-    labelSelector?: {
-      matchLabels?: Record<string, string>;
-    };
-    orLabelSelectors?: Array<{ matchLabels?: Record<string, string> }>;
-    storageLocation?: string;
-    ttl?: string;
-    snapshotVolumes?: boolean;
-    snapshotMoveData?: boolean;
-    defaultVolumesToFsBackup?: boolean;
-  };
-  status?: {
-    phase: string;
-    startTimestamp?: string;
-    completionTimestamp?: string;
-    expiration?: string;
-    errors?: number;
-    warnings?: number;
-  };
-}
-
-// Helper functions
-const getVMName = (backup: VeleroBackup): string => {
-  return backup.metadata.labels?.['kubevirt.io/vm'] ||
-         backup.spec?.labelSelector?.matchLabels?.['kubevirt.io/vm'] ||
-         backup.spec?.labelSelector?.matchLabels?.['vm.kubevirt.io/name'] ||
-         backup.spec?.orLabelSelectors?.[0]?.matchLabels?.['vm.kubevirt.io/name'] ||
-         '';
-};
-
-const getBackupNamespace = (backup: VeleroBackup): string => {
-  return backup.metadata.labels?.['kubevirt.io/vm-namespace'] ||
-         backup.spec?.includedNamespaces?.[0] ||
-         '';
-};
-
-const getStatusColor = (phase: string): 'success' | 'error' | 'warning' | 'info' | 'default' => {
-  switch (phase) {
-    case 'Completed': return 'success';
-    case 'Failed': return 'error';
-    case 'FailedValidation': return 'error';
-    case 'InProgress': return 'warning';
-    case 'PartiallyFailed': return 'warning';
-    case 'New': return 'info';
-    default: return 'default';
-  }
-};
-
-const formatDateTime = (dateStr?: string): string => {
-  if (!dateStr) return '-';
-  const date = new Date(dateStr);
-  return date.toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-};
 
 export default function BackupList() {
   const { enqueueSnackbar } = useSnackbar();
@@ -184,7 +121,7 @@ export default function BackupList() {
     {
       id: 'vm',
       header: 'VM',
-      accessorFn: (backup) => getVMName(backup) || 'All VMs',
+      accessorFn: (backup) => getVMNameFromBackup(backup) || 'All VMs',
     },
     {
       id: 'status',
@@ -192,7 +129,7 @@ export default function BackupList() {
       accessorFn: (backup) => backup.status?.phase || 'New',
       Cell: ({ row }) => {
         const phase = row.original.status?.phase || 'New';
-        return <Chip label={phase} size="small" color={getStatusColor(phase)} />;
+        return <Chip label={phase} size="small" color={getVeleroStatusColor(phase)} />;
       },
       filterVariant: 'select',
       filterSelectOptions: statusOptions,
@@ -201,14 +138,14 @@ export default function BackupList() {
       id: 'started',
       header: 'Started',
       accessorFn: (backup) => backup.status?.startTimestamp ? new Date(backup.status.startTimestamp).getTime() : 0,
-      Cell: ({ row }) => formatDateTime(row.original.status?.startTimestamp),
+      Cell: ({ row }) => formatVeleroDateTime(row.original.status?.startTimestamp),
       enableColumnFilter: false,
     },
     {
       id: 'completed',
       header: 'Completed',
       accessorFn: (backup) => backup.status?.completionTimestamp ? new Date(backup.status.completionTimestamp).getTime() : 0,
-      Cell: ({ row }) => formatDateTime(row.original.status?.completionTimestamp),
+      Cell: ({ row }) => formatVeleroDateTime(row.original.status?.completionTimestamp),
       enableColumnFilter: false,
       show: false,
     },
