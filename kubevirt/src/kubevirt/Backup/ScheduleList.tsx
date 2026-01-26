@@ -1,6 +1,7 @@
 import { ApiProxy } from '@kinvolk/headlamp-plugin/lib';
 import { Link, SectionBox } from '@kinvolk/headlamp-plugin/lib/components/common';
 import {
+  Autocomplete,
   Box,
   Button,
   Checkbox,
@@ -80,7 +81,7 @@ interface ColumnDef {
 
 const ALL_COLUMNS: ColumnDef[] = [
   { id: 'name', label: 'Name', minWidth: 280, sortable: true, filterable: true },
-  { id: 'namespace', label: 'VM Namespace', minWidth: 120, sortable: true, filterable: true },
+  { id: 'namespace', label: 'Namespace', minWidth: 120, sortable: true, filterable: true },
   { id: 'vm', label: 'VM', minWidth: 120, sortable: true, filterable: true },
   { id: 'schedule', label: 'Schedule', minWidth: 180, sortable: true, filterable: true },
   { id: 'lastBackup', label: 'Last Backup', minWidth: 150, sortable: true, filterable: false },
@@ -109,6 +110,9 @@ export default function ScheduleList() {
     vm: '',
     schedule: '',
   });
+
+  // Namespace filter (top-level)
+  const [namespaceFilter, setNamespaceFilter] = useState<string | null>(null);
 
   // Search and display state
   const [showSearch, setShowSearch] = useState(false);
@@ -152,6 +156,22 @@ export default function ScheduleList() {
     return () => clearInterval(interval);
   }, [fetchSchedules]);
 
+  // Get VM name from schedule
+  const getVMName = (schedule: VeleroSchedule): string => {
+    return schedule.metadata.labels?.['kubevirt.io/vm'] ||
+           schedule.spec?.template?.labelSelector?.matchLabels?.['kubevirt.io/vm'] ||
+           schedule.spec?.template?.labelSelector?.matchLabels?.['vm.kubevirt.io/name'] ||
+           schedule.spec?.template?.orLabelSelectors?.[0]?.matchLabels?.['vm.kubevirt.io/name'] ||
+           '';
+  };
+
+  // Get namespace from schedule
+  const getScheduleNamespace = (schedule: VeleroSchedule): string => {
+    return schedule.metadata.labels?.['kubevirt.io/vm-namespace'] ||
+           schedule.spec?.template?.includedNamespaces?.[0] ||
+           '';
+  };
+
   // Get unique namespaces
   const namespaces = useMemo(() => {
     const nsSet = new Set<string>();
@@ -164,6 +184,16 @@ export default function ScheduleList() {
     if (!vms || !selectedNamespace) return [];
     return vms.filter(vm => vm.getNamespace() === selectedNamespace);
   }, [vms, selectedNamespace]);
+
+  // Get unique namespaces from schedules for the filter
+  const scheduleNamespaces = useMemo(() => {
+    const nsSet = new Set<string>();
+    schedules.forEach(s => {
+      const ns = getScheduleNamespace(s);
+      if (ns) nsSet.add(ns);
+    });
+    return Array.from(nsSet).sort();
+  }, [schedules]);
 
   // Create schedule for KubeVirt VMs
   const handleCreateSchedule = async () => {
@@ -272,22 +302,6 @@ export default function ScheduleList() {
     setTtl('720h');
   };
 
-  // Get VM name from schedule
-  const getVMName = (schedule: VeleroSchedule): string => {
-    return schedule.metadata.labels?.['kubevirt.io/vm'] ||
-           schedule.spec?.template?.labelSelector?.matchLabels?.['kubevirt.io/vm'] ||
-           schedule.spec?.template?.labelSelector?.matchLabels?.['vm.kubevirt.io/name'] ||
-           schedule.spec?.template?.orLabelSelectors?.[0]?.matchLabels?.['vm.kubevirt.io/name'] ||
-           '';
-  };
-
-  // Get namespace from schedule
-  const getScheduleNamespace = (schedule: VeleroSchedule): string => {
-    return schedule.metadata.labels?.['kubevirt.io/vm-namespace'] ||
-           schedule.spec?.template?.includedNamespaces?.[0] ||
-           '';
-  };
-
   // Parse cron expression to human readable
   const parseCronExpression = (cron: string): string => {
     const parts = cron.split(' ');
@@ -324,6 +338,11 @@ export default function ScheduleList() {
   // Sort and filter schedules
   const processedSchedules = useMemo(() => {
     let result = [...schedules];
+
+    // Apply namespace filter (top-level)
+    if (namespaceFilter) {
+      result = result.filter(s => getScheduleNamespace(s) === namespaceFilter);
+    }
 
     // Apply global search
     if (searchQuery) {
@@ -402,7 +421,7 @@ export default function ScheduleList() {
     });
 
     return result;
-  }, [schedules, filters, sortField, sortDirection, searchQuery]);
+  }, [schedules, filters, sortField, sortDirection, searchQuery, namespaceFilter]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -502,24 +521,6 @@ export default function ScheduleList() {
           disableGutters
           sx={{ mb: 1, gap: 1, minHeight: 'auto', flexWrap: 'wrap' }}
         >
-          {selected.size > 0 && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Typography variant="body2" color="text.secondary">
-                {selected.size} selected
-              </Typography>
-              <Button
-                variant="contained"
-                color="error"
-                size="small"
-                startIcon={<Icon icon="mdi:delete" />}
-                onClick={handleDeleteSelected}
-                sx={{ whiteSpace: 'nowrap' }}
-              >
-                Delete Selected
-              </Button>
-            </Box>
-          )}
-
           <Box sx={{ flexGrow: 1 }} />
 
           {showSearch && (
@@ -544,6 +545,45 @@ export default function ScheduleList() {
                 ),
               }}
             />
+          )}
+
+          <Autocomplete
+            size="small"
+            options={scheduleNamespaces}
+            value={namespaceFilter}
+            onChange={(_, value) => setNamespaceFilter(value)}
+            renderInput={(params) => (
+              <TextField {...params} placeholder="All namespaces" />
+            )}
+            sx={{ minWidth: 180 }}
+          />
+
+          {selected.size > 0 && (
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1,
+                bgcolor: 'action.selected',
+                borderRadius: 1,
+                px: 1.5,
+                py: 0.5,
+              }}
+            >
+              <Typography variant="body2" color="text.secondary">
+                {selected.size} selected
+              </Typography>
+              <Button
+                variant="contained"
+                color="error"
+                size="small"
+                startIcon={<Icon icon="mdi:delete" />}
+                onClick={handleDeleteSelected}
+                sx={{ whiteSpace: 'nowrap' }}
+              >
+                Delete Selected
+              </Button>
+            </Box>
           )}
 
           <Tooltip title={showSearch ? 'Hide search' : 'Show search'}>
@@ -589,25 +629,6 @@ export default function ScheduleList() {
         <TableContainer component={Paper} variant="outlined">
           <Table size="small">
             <TableHead>
-              {/* Filter row */}
-              {showFilters && (
-                <TableRow>
-                  <TableCell padding="checkbox" />
-                  {visibleColumnDefs.map((col) => (
-                    <TableCell key={col.id} sx={{ minWidth: col.minWidth }}>
-                      {col.filterable ? (
-                        <TextField
-                          size="small"
-                          placeholder={`Filter ${col.label.toLowerCase()}...`}
-                          value={filters[col.id] || ''}
-                          onChange={(e) => setFilters({ ...filters, [col.id]: e.target.value })}
-                          fullWidth
-                        />
-                      ) : null}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              )}
               {/* Header row */}
               <TableRow>
                 <TableCell padding="checkbox">
@@ -636,6 +657,26 @@ export default function ScheduleList() {
                   </TableCell>
                 ))}
               </TableRow>
+              {/* Filter row - below header */}
+              {showFilters && (
+                <TableRow>
+                  <TableCell padding="checkbox" />
+                  {visibleColumnDefs.map((col) => (
+                    <TableCell key={col.id} sx={{ minWidth: col.minWidth, pt: 0 }}>
+                      {col.filterable ? (
+                        <TextField
+                          size="small"
+                          placeholder={`Filter...`}
+                          value={filters[col.id] || ''}
+                          onChange={(e) => setFilters({ ...filters, [col.id]: e.target.value })}
+                          fullWidth
+                          variant="standard"
+                        />
+                      ) : null}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              )}
             </TableHead>
             <TableBody>
               {processedSchedules.length === 0 ? (
