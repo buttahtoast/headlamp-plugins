@@ -1,0 +1,25 @@
+Flux Headlamp plugin draft
+
+Based on Headlamp's Flux plugin v0.7.0:
+https://github.com/headlamp-k8s/plugins/tree/main/flux
+Copyright The Headlamp Authors, Apache License 2.0.
+
+The statistics cards in src/common/StatCard.tsx and statCardVisibility.ts
+are adapted from Capsule v0.3.1, with the diagram design informed by its
+ManagedResourceFlow component:
+https://github.com/projectcapsule/headlamp-plugin/tree/v0.3.1
+Copyright The Capsule Authors, Apache License 2.0.
+
+The overview layout follows the Cilium plugin's Overview component:
+https://github.com/batuhancikrikci/headlamp-plugins/tree/main/cilium
+Copyright Batuhan CIKRIKCI, Apache License 2.0.
+
+The SSA field-ownership renderer in src/inventory/ssaDiff.ts is adapted
+from the Capsule plugin src/components/common/ssaDiff.ts, with its
+GlobalTenantResource managed-resource inspector informing the UI:
+https://github.com/projectcapsule/headlamp-plugin
+Copyright The Capsule Authors, Apache License 2.0.
+
+The shared SSA inspector is bundled from the local ssa-inspector package
+(src/shared/model.ts and ManagerDiff.tsx). Its Capsule attribution is
+retained in that package's NOTICE and the source headers.

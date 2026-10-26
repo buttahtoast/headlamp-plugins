@@ -1,0 +1,239 @@
+import { useTranslation } from '@kinvolk/headlamp-plugin/lib';
+import {
+  DateLabel,
+  Link,
+  ShowHideLabel,
+  Table as HTable,
+  TableColumn,
+  TableProps as HTableProps,
+} from '@kinvolk/headlamp-plugin/lib/components/common';
+import { KubeObject } from '@kinvolk/headlamp-plugin/lib/lib/k8s/cluster';
+import { KubeCRD } from '@kinvolk/headlamp-plugin/lib/lib/k8s/crd';
+import React from 'react';
+import { capability } from '../actions/model';
+import { ResourceActions } from '../actions/ResourceActions';
+import { getSourceNameAndPluralKind } from '../helpers';
+import { PluralName } from '../helpers/pluralName';
+import StatusLabel, { getStatusText } from './StatusLabel';
+
+type CommonColumnType =
+  | 'namespace'
+  | 'name'
+  | 'lastUpdated'
+  | 'age'
+  | 'source'
+  | 'message'
+  | 'status'
+  | 'revision';
+
+interface TableCol {
+  header: string;
+  accessorKey?: string;
+  accessorFn?: (item: any) => React.ReactNode;
+  Cell?: (props: { row: { original: any } }) => React.ReactNode;
+}
+
+interface NameColumn extends Partial<TableCol> {
+  extends: 'name';
+  routeName?: string;
+}
+
+export interface TableProps extends Omit<HTableProps<any>, 'columns'> {
+  columns: (TableCol | CommonColumnType | NameColumn | TableColumn<any, any>)[];
+}
+
+function prepareLastUpdated(item: KubeCRD) {
+  const condition = item?.jsonData?.status?.conditions?.find(c => c.type === 'Ready');
+  return condition?.lastTransitionTime;
+}
+
+function prepareNameColumn(
+  colProps: Partial<NameColumn> = {},
+  t: (key: string) => string
+): TableCol {
+  const { routeName, ...genericProps } = colProps;
+
+  // Remove the extends property from the genericProps
+  delete genericProps.extends;
+
+  return {
+    header: t('Name'),
+    accessorKey: 'metadata.name',
+    Cell: ({ row: { original: item } }) => (
+      <Link
+        routeName={routeName}
+        params={{
+          name: item.metadata.name,
+          namespace: item.metadata.namespace,
+          pluralName: PluralName(item.kind),
+        }}
+      >
+        {item.metadata.name}
+      </Link>
+    ),
+    ...genericProps,
+  };
+}
+
+export function Table(props: TableProps) {
+  const { columns, data, ...otherProps } = props;
+  const { t } = useTranslation();
+  const actionable = data?.some(item => !!capability(item));
+
+  const processedColumns = React.useMemo(() => {
+    return columns.map(column => {
+      if (typeof column === 'string') {
+        switch (column) {
+          case 'namespace':
+            return {
+              header: t('Namespace'),
+              accessorKey: 'metadata.namespace',
+              Cell: ({ row: { original: item } }) => (
+                <Link
+                  routeName="namespace"
+                  params={{
+                    name: item.metadata.namespace,
+                  }}
+                >
+                  {item.metadata.namespace}
+                </Link>
+              ),
+            };
+          case 'name':
+            return prepareNameColumn(undefined, t);
+          case 'lastUpdated':
+            return {
+              header: t('Last Updated'),
+              accessorFn: item => prepareLastUpdated(item),
+              Cell: ({ cell }: any) => <DateLabel format="mini" date={cell.getValue()} />,
+            };
+          case 'age':
+            return {
+              id: 'age',
+              header: t('Age'),
+              gridTemplate: 'min-content',
+              accessorFn: (item: KubeObject) =>
+                -new Date(item.metadata.creationTimestamp).getTime(),
+              enableColumnFilter: false,
+              muiTableBodyCellProps: {
+                align: 'right',
+              },
+              Cell: ({ row }) =>
+                row.original && (
+                  <DateLabel date={row.original.metadata.creationTimestamp} format="mini" />
+                ),
+            };
+          case 'source':
+            return {
+              header: t('Source'),
+              accessorFn: item => {
+                const { name } = getSourceNameAndPluralKind(item);
+                return name;
+              },
+              Cell: ({ row }: any) => {
+                const { name, pluralKind, namespace } = getSourceNameAndPluralKind(row.original);
+                return (
+                  <Link
+                    routeName="source"
+                    params={{
+                      pluralName: pluralKind,
+                      namespace: namespace ?? row.original.jsonData.metadata.namespace,
+                      name: name,
+                    }}
+                  >
+                    {name}
+                  </Link>
+                );
+              },
+            };
+          case 'status':
+            return {
+              header: t('Status'),
+              accessorFn: item => t(getStatusText(item)),
+              Cell: ({ row: { original: item } }: any) => <StatusLabel item={item} />,
+            };
+          case 'revision':
+            return {
+              header: t('Revision'),
+              accessorFn: item => {
+                const reference = item.jsonData.status?.lastAttemptedRevision;
+                return (
+                  <ShowHideLabel labelId={`${item?.metadata?.uid}-revision`}>
+                    {reference ?? ''}
+                  </ShowHideLabel>
+                );
+              },
+            };
+          case 'message':
+            return {
+              header: t('Message'),
+              accessorFn: item => {
+                const message = item.jsonData.status?.conditions?.find(
+                  c => c.type === 'Ready'
+                )?.message;
+                return (
+                  <ShowHideLabel labelId={`${item?.metadata?.uid}-message`}>
+                    {message ?? ''}
+                  </ShowHideLabel>
+                );
+              },
+            };
+          default:
+            return column;
+        }
+      }
+
+      if ((column as NameColumn).extends === 'name') {
+        return prepareNameColumn(column as NameColumn, t);
+      }
+
+      return column;
+    });
+  }, [columns, t]);
+
+  return (
+    <HTable
+      data={data}
+      loading={data === null}
+      {...(actionable
+        ? {
+            enableRowSelection: row => !!capability(row.original),
+            getRowId: item =>
+              [
+                item.cluster,
+                item.apiVersion || item.jsonData?.apiVersion,
+                item.kind || item.jsonData?.kind,
+                item.metadata?.namespace,
+                item.metadata?.name,
+                item.metadata?.uid,
+              ].join('/'),
+            renderRowSelectionToolbar: ({ table }) => (
+              <ResourceActions
+                resources={table.getFilteredSelectedRowModel().rows.map(row => row.original)}
+              />
+            ),
+          }
+        : {})}
+      {...otherProps}
+      columns={
+        [
+          ...processedColumns,
+          ...(actionable
+            ? [
+                {
+                  id: 'flux-actions',
+                  header: 'Actions',
+                  enableSorting: false,
+                  enableColumnFilter: false,
+                  gridTemplate: 'min-content',
+                  Cell: ({ row }) => <ResourceActions resource={row.original} compact />,
+                },
+              ]
+            : []),
+        ] as TableCol[]
+      }
+    />
+  );
+}
+
+export default Table;

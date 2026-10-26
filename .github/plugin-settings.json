@@ -1,0 +1,4 @@
+{
+  "flux": { "installDirectory": "headlamp_flux" },
+  "ssa": { "installDirectory": "ssa-inspector" }
+}

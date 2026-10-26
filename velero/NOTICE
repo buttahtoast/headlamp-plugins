@@ -1,0 +1,10 @@
+Velero Headlamp plugin
+
+The schedule expression helpers in src/cron.ts and their tests in src/cron.test.ts
+are adapted from the Headlamp project's Velero plugin:
+https://github.com/headlamp-k8s/plugins/tree/main/velero
+Copyright The Headlamp Authors, licensed under Apache License 2.0.
+
+This implementation follows the upstream plugin's Kubernetes custom resource
+and sidebar patterns, and adds write operations, artifact inspection, comparison,
+recovery and a Kubernetes service proxy artifact reader.

@@ -1,99 +1,191 @@
-name: Headlamp plugin linting, type checking, and testing
+name: Headlamp plugins
 
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
-env:
-  HEADLAMP_PLUGIN_VERSION: latest
+permissions:
+  contents: read
+
+concurrency:
+  # Every tag updates the same Artifact Hub branch.
+  group: ${{ startsWith(github.ref, 'refs/tags/') && 'release-publication' || format('{0}-{1}', github.workflow, github.ref) }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
-  # Get list of folders containing headlamp plugins
-  # We need a separate step to be able to pass the list to the matrix of the build job
-  find_plugin_dirs:
-    runs-on: ubuntu-latest
+  discover:
+    runs-on: ubuntu-24.04
     outputs:
-      dirs: ${{ steps.dirs.outputs.dirs }}
+      matrix: ${{ steps.plugins.outputs.matrix }}
+      version: ${{ steps.plugins.outputs.version }}
+      prerelease: ${{ steps.plugins.outputs.prerelease }}
     steps:
-      - uses: actions/checkout@v4
-      - id: dirs
-        run: echo "dirs=$(grep -m1 -lR @kinvolk/headlamp-plugin ./*/package.json | xargs -n1 dirname | jq --raw-input --slurp --compact-output 'split("\n")[:-1]')" >> ${GITHUB_OUTPUT}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '24'
+      - name: Discover plugins and validate the tag
+        id: plugins
+        env:
+          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: node .github/scripts/plugins.mjs matrix "$RELEASE_TAG"
 
-  build:
-    needs: find_plugin_dirs
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      packages: write
-      id-token: write
-
-    defaults:
-      run:
-        working-directory: ./
-
+  check:
+    name: Check and package ${{ matrix.directory }}
+    needs: discover
+    runs-on: ubuntu-24.04
     strategy:
-      matrix:
-        node-version: [21.x]
-        dir: ${{ fromJson(needs.find_plugin_dirs.outputs.dirs) }}
-
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.discover.outputs.matrix) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '24'
+      - name: Set release versions before installing local dependencies
+        if: github.ref_type == 'tag'
+        run: node .github/scripts/plugins.mjs prepare "$GITHUB_REF_NAME"
+      - name: Capsule Headlamp checks
+        uses: projectcapsule/github-actions/headlamp-test@84ff57abf7d51892eaf19efbbddefcfe56969071
+        with:
+          build-root: ${{ matrix.directory }}
+          node-version: '24'
+      - name: Package the checked bundle for release and container installation
+        env:
+          PLUGIN: ${{ matrix.directory }}
+        run: node .github/scripts/plugins.mjs package "$PLUGIN" "$RUNNER_TEMP/plugin-$PLUGIN"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: plugin-${{ matrix.directory }}
+          path: ${{ runner.temp }}/plugin-${{ matrix.directory }}/
+          if-no-files-found: error
+          retention-days: 7
 
-      - name: Extract plugin info
-        run: |
-          name=$(jq -r .name ${{ matrix.dir }}/package.json)
-          version=$(jq -r .version ${{ matrix.dir }}/package.json)
-          tag_name="${name}-${version}"
-          clean_dir=$(echo "${{ matrix.dir }}" | sed 's|^\./||' | sed 's/"/ /g')
-          echo "PLUGIN_NAME=$name" >> $GITHUB_ENV
-          echo "PLUGIN_VERSION=$version" >> $GITHUB_ENV
-          echo "TAG_NAME=$tag_name" >> $GITHUB_ENV
-          echo "CLEAN_DIR=$clean_dir" >> $GITHUB_ENV
-      - name: ghcr-login
-        if: github.ref == 'refs/heads/main'
-        uses: docker/login-action@v3
+  images:
+    name: Publish image for ${{ matrix.directory }}
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: [discover, check]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.discover.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: plugin-${{ matrix.directory }}
+          path: ${{ runner.temp }}/plugin-${{ matrix.directory }}
+      - name: Image tags
+        id: image
+        env:
+          PLUGIN: ${{ matrix.directory }}
+        run: node .github/scripts/plugins.mjs image "$PLUGIN"
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
-          username: ${{ github.repository_owner }}
+          username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      - name: Build and push
-        id: build-push
-        uses: docker/build-push-action@v6
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Publish the checked payload for both architectures
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
-          push: ${{ github.event_name != 'pull_request' }}
-          load: ${{ github.event_name == 'pull_request' }}
-          build-args: PLUGIN=${{ env.CLEAN_DIR }}
-          context: .
-          no-cache: false
-          tags: |
-            ${{ github.event_name != 'pull_request' && format('ghcr.io/{0}/{1}:latest', github.repository, env.CLEAN_DIR) || '' }}
-            ${{ github.event_name != 'pull_request' && format('ghcr.io/{0}/{1}:{2}', github.repository, env.CLEAN_DIR, env.PLUGIN_VERSION) || '' }}
-            ${{ format('ghcr.io/{0}/{1}:{2}', github.repository, env.CLEAN_DIR, github.sha) || '' }}
-      - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
+          context: ${{ runner.temp }}/plugin-${{ matrix.directory }}/context
+          file: ${{ github.workspace }}/Dockerfile.release
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.image.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.discover.outputs.version }}
+
+  release:
+    name: Publish GitHub release
+    needs: [discover, check, images]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          node-version: ${{ matrix.node-version }}
-          cache: 'npm'
-          cache-dependency-path: '${{ matrix.dir }}/package-lock.json'
-      - run: |
-          echo "Checking ${{ matrix.dir }} plugin"
-          npx @kinvolk/headlamp-plugin@$HEADLAMP_PLUGIN_VERSION format --check ${{ matrix.dir }}
-          npx @kinvolk/headlamp-plugin@$HEADLAMP_PLUGIN_VERSION lint ${{ matrix.dir }}
-          npx @kinvolk/headlamp-plugin@$HEADLAMP_PLUGIN_VERSION build ${{ matrix.dir }}
-          npx @kinvolk/headlamp-plugin@$HEADLAMP_PLUGIN_VERSION test ${{ matrix.dir }}
-          npx @kinvolk/headlamp-plugin@$HEADLAMP_PLUGIN_VERSION tsc ${{ matrix.dir }}
-          npx @kinvolk/headlamp-plugin@$HEADLAMP_PLUGIN_VERSION package ${{ matrix.dir }}
-      - name: Create release
-        if: github.ref == 'refs/heads/main'
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: plugin-*
+          path: ${{ runner.temp }}/release-inputs
+      - name: Upload all plugin archives before publishing
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PRERELEASE: ${{ needs.discover.outputs.prerelease }}
         run: |
-          if ! git rev-parse "${{ env.TAG_NAME }}" >/dev/null 2>&1; then
-            gh release create "${{ env.TAG_NAME }}" "${{ env.TAG_NAME }}.tar.gz" --generate-notes --title "Release ${{ env.TAG_NAME }}" --notes "Release ${{ env.TAG_NAME }}\nDockerfile: ${{ format('ghcr.io/{0}/{1}:{2}', github.repository, env.CLEAN_DIR, env.PLUGIN_VERSION) || '' }}"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse "$GITHUB_REF_NAME^{commit}")" = "$GITHUB_SHA"
+          mkdir "$RUNNER_TEMP/release-assets"
+          find "$RUNNER_TEMP/release-inputs" -name '*.tar.gz' -exec cp {} "$RUNNER_TEMP/release-assets/" \;
+          cd "$RUNNER_TEMP/release-assets"
+          sha256sum ./*.tar.gz > SHA256SUMS
+          marker="<!-- headlamp-plugins source: $GITHUB_SHA -->"
+          if gh release view "$GITHUB_REF_NAME" --json isDraft,body > "$RUNNER_TEMP/existing-release.json"; then
+            jq -e --arg marker "$marker" '.isDraft and (.body | contains($marker))' "$RUNNER_TEMP/existing-release.json"
+          else
+            options=()
+            if [ "$PRERELEASE" = true ]; then options+=(--prerelease --latest=false); fi
+            gh release create "$GITHUB_REF_NAME" --verify-tag --draft --generate-notes \
+              --title "Release $GITHUB_REF_NAME" --notes "$marker" "${options[@]}"
           fi
+          gh release upload "$GITHUB_REF_NAME" ./*.tar.gz SHA256SUMS --clobber
+          gh release edit "$GITHUB_REF_NAME" --draft=false
+
+  metadata:
+    name: Artifact Hub metadata for ${{ matrix.directory }}
+    needs: [discover, release]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      # Each writer fetches the preceding package's commit.
+      max-parallel: 1
+      matrix: ${{ fromJSON(needs.discover.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: plugin-${{ matrix.directory }}
+          path: .release-input/${{ matrix.directory }}
+      - name: Prepare package versions and catalog settings
+        run: node .github/scripts/plugins.mjs prepare "$GITHUB_REF_NAME"
+      - name: Capsule Artifact Hub publisher
+        uses: projectcapsule/github-actions/headlamp-publish@88b19103c6f3a8e6ab172bc17d4bfd181ac37118
+        with:
+          build-root: ${{ matrix.directory }}
+          package-name: ${{ matrix.catalogName }}
+          archive: .release-input/${{ matrix.directory }}/*.tar.gz
+          target-branch: artifacthub
+          metadata-template: artifacthub.template.yml
+          node-version: '24'

@@ -1,5 +1,5 @@
-# Use the official Node.js 18 image as the base image for building the plugins
-FROM node:21 AS builder
+# Match the Node version used by the Capsule Headlamp checks.
+FROM node:24 AS builder
 
 # Set the working directory inside the container
 WORKDIR /headlamp-plugins
@@ -8,36 +8,28 @@ WORKDIR /headlamp-plugins
 ARG PLUGIN
 
 # Check if the PLUGIN argument is provided
-RUN if [ -z "$PLUGIN" ]; then \
-      echo "Error: PLUGIN argument is required"; \
-      exit 1; \
-    fi
+RUN case "$PLUGIN" in ''|*[!a-z0-9-]*) echo 'Invalid PLUGIN directory'; exit 1 ;; esac
 
 # Create a directory for the plugin build
-RUN mkdir -p /headlamp-plugins/build/${PLUGIN}
+RUN mkdir -p /headlamp-plugins/build
 
 # Copy the plugin source code into the container
+# Flux bundles the shared inspector exported by this local plugin package.
+COPY ssa /headlamp-plugins/ssa
 COPY ${PLUGIN} /headlamp-plugins/${PLUGIN}
+COPY .github/plugin-settings.json /headlamp-plugins/plugin-settings.json
 
-# Install dependencies for the specified plugin
-RUN echo "Installing deps for plugin $PLUGIN..."; \
-    cd /headlamp-plugins/$PLUGIN; \
-    npm ci
-
-# Build the specified plugin
-RUN echo "Building plugin $PLUGIN..."; \
-    cd /headlamp-plugins/$PLUGIN; \
-    npm run build
+WORKDIR /headlamp-plugins/${PLUGIN}
+RUN npm ci
+RUN npm run build
 
 # Extract the built plugin to the build directory
-RUN echo "Extracting plugin $PLUGIN..."; \
-    cd /headlamp-plugins/$PLUGIN; \
-    npx --no-install headlamp-plugin extract . /headlamp-plugins/build/${PLUGIN}
+RUN npx --no-install headlamp-plugin extract "$PWD" /headlamp-plugins/build && \
+    node -e 'const fs = require("node:fs"); const name = process.env.PLUGIN; const install = require("/headlamp-plugins/plugin-settings.json")[name]?.installDirectory || name; if (install !== name) fs.renameSync(`/headlamp-plugins/build/${name}`, `/headlamp-plugins/build/${install}`);'
 
-FROM alpine
+FROM busybox:1.37.0
 
 # Copy the built plugin files from the builder stage to the /plugins directory in the final image
 COPY --from=builder /headlamp-plugins/build/ /plugins/
 
 LABEL org.opencontainers.image.source=https://github.com/buttahtoast/headlamp-plugins
-LABEL org.opencontainers.image.licenses=MIT

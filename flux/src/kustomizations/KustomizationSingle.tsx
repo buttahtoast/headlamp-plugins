@@ -1,0 +1,159 @@
+import { useTranslation } from '@kinvolk/headlamp-plugin/lib';
+import {
+  ConditionsTable,
+  Link,
+  MainInfoSection,
+  SectionBox,
+} from '@kinvolk/headlamp-plugin/lib/components/common';
+import Editor from '@monaco-editor/react';
+import React from 'react';
+import { useParams } from 'react-router-dom';
+import YAML from 'yaml';
+import RemainingTimeDisplay from '../common/RemainingTimeDisplay';
+import { Kustomization } from '../common/Resources';
+import StatusLabel from '../common/StatusLabel';
+import Table from '../common/Table';
+import { getSourceNameAndPluralKind, ObjectEvents } from '../helpers/index';
+import { GetResourcesFromInventory } from './Inventory';
+
+export function FluxKustomizationDetailView(props: { name?: string; namespace?: string }) {
+  const params = useParams<{ namespace: string; name: string }>();
+  const { name = params.name, namespace = params.namespace } = props;
+
+  return (
+    <>
+      <KustomizationDetails name={name} namespace={namespace} />
+      <ObjectEvents name={name} namespace={namespace} resourceClass={Kustomization} />
+    </>
+  );
+}
+
+function KustomizationDetails(props) {
+  const { name, namespace } = props;
+  const [cr] = Kustomization.useGet(name, namespace);
+  const { t } = useTranslation();
+
+  function prepareExtraInfo(cr) {
+    if (!cr) {
+      return [];
+    }
+    const {
+      name: sourceName,
+      pluralKind: sourceType,
+      namespace: sourceNamespace,
+    } = getSourceNameAndPluralKind(cr);
+    const extraInfo = [
+      {
+        name: t('Status'),
+        value: <StatusLabel item={cr} />,
+      },
+      {
+        name: t('Force'),
+        value: String(cr?.jsonData.spec?.force ?? false),
+      },
+      {
+        name: t('Path'),
+        value: cr?.jsonData.spec?.path,
+      },
+      {
+        name: t('Prune'),
+        value: cr?.jsonData.spec?.prune,
+      },
+      {
+        name: t('SourceRef'),
+        value: (
+          <Link
+            routeName="source"
+            params={{
+              namespace: sourceNamespace ?? cr?.jsonData?.metadata?.namespace,
+              pluralName: sourceType,
+              name: sourceName,
+            }}
+          >
+            {sourceName}
+          </Link>
+        ),
+      },
+    ];
+    extraInfo.push({
+      name: t('Suspend'),
+      value: cr?.jsonData.spec?.suspend ? t('True') : t('False'),
+    });
+
+    const interval = cr?.jsonData.spec?.interval;
+    extraInfo.push({
+      name: t('Interval'),
+      value: interval,
+    });
+
+    if (!cr?.jsonData.spec?.suspend) {
+      extraInfo.push({
+        name: t('Next Reconciliation'),
+        value: <RemainingTimeDisplay item={cr} />,
+      });
+    }
+    return extraInfo;
+  }
+
+  const themeName = localStorage.getItem('headlampThemePreference');
+
+  return (
+    <>
+      <MainInfoSection resource={cr} extraInfo={prepareExtraInfo(cr)} />
+      {cr?.jsonData?.spec?.values && (
+        <SectionBox title={t('Values')}>
+          <Editor
+            language="yaml"
+            value={YAML.stringify(cr?.jsonData?.spec?.values)}
+            height={200}
+            theme={themeName === 'dark' ? 'vs-dark' : 'light'}
+          />
+        </SectionBox>
+      )}
+      {cr && (
+        <>
+          <SectionBox title={t('Inventory')}>
+            <GetResourcesFromInventory
+              inventory={cr?.jsonData?.status?.inventory?.entries}
+              resource={cr}
+            />
+          </SectionBox>
+          <SectionBox title={t('Dependencies')}>
+            <Table
+              data={cr?.jsonData?.spec?.dependsOn}
+              columns={[
+                {
+                  header: t('Name'),
+                  accessorFn: item => {
+                    return (
+                      <Link
+                        routeName="kustomize"
+                        params={{
+                          name: item.name,
+                          namespace: item.namespace || namespace,
+                        }}
+                      >
+                        {item.name}
+                      </Link>
+                    );
+                  },
+                },
+                {
+                  header: t('Namespace'),
+                  accessorFn: item => (
+                    <Link routeName="namespace" params={{ name: item.namespace || namespace }}>
+                      {item.namespace || namespace}
+                    </Link>
+                  ),
+                },
+              ]}
+            />
+          </SectionBox>
+          <SectionBox title={t('Conditions')}>
+            <ConditionsTable resource={cr?.jsonData} />
+          </SectionBox>
+        </>
+      )}
+    </>
+  );
+}

@@ -1,0 +1,43 @@
+# Bind these roles to the appropriate users/groups through your existing RBAC.
+# No bindings to end users are installed automatically.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: headlamp-velero-viewer
+  namespace: velero-system
+rules:
+  - apiGroups: [velero.io]
+    resources:
+      [
+        backups,
+        schedules,
+        restores,
+        backupstoragelocations,
+        volumesnapshotlocations,
+        podvolumebackups,
+        podvolumerestores,
+        datauploads,
+        datadownloads,
+        backuprepositories,
+      ]
+    verbs: [get, list, watch]
+  - apiGroups: [velero.io]
+    resources: [downloadrequests]
+    verbs: [create, get]
+  - apiGroups: ['']
+    resources: [services/proxy]
+    resourceNames: ['headlamp-velero-reader:8080']
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: headlamp-velero-operator
+  namespace: velero-system
+rules:
+  - apiGroups: [velero.io]
+    resources: [backups, schedules, restores]
+    verbs: [create]
+  - apiGroups: [velero.io]
+    resources: [schedules]
+    verbs: [patch]

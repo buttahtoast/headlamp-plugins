@@ -1,0 +1,7 @@
+SSA Inspector for Headlamp
+
+The field-ownership renderer in src/shared/model.ts is adapted from the Capsule
+plugin src/components/common/ssaDiff.ts. The Capsule GlobalTenantResource
+inspector and this repository's Flux inspector informed the shared viewer.
+https://github.com/projectcapsule/headlamp-plugin
+Copyright The Capsule Authors, Apache License 2.0.

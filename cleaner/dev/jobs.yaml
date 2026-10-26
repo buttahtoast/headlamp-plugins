@@ -1,0 +1,245 @@
+# Apply after demo.yaml. These jobs are deliberately retained for inspection.
+# No TTL controller cleanup is configured, and both Cleaner policies use Scan.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: demo-nightly-report
+  namespace: cleaner-demo
+  labels:
+    app.kubernetes.io/part-of: headlamp-cleaner-demo
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 120
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: headlamp-cleaner-demo
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: task
+          image: docker.io/library/busybox:1.37.0
+          command: [sh, -c, 'echo "Demo: nightly report generated successfully"; sleep 2']
+          resources:
+            requests: {cpu: 5m, memory: 8Mi}
+            limits: {cpu: 50m, memory: 32Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: demo-cache-refresh
+  namespace: cleaner-demo
+  labels:
+    app.kubernetes.io/part-of: headlamp-cleaner-demo
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 120
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: headlamp-cleaner-demo
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: task
+          image: docker.io/library/busybox:1.37.0
+          command: [sh, -c, 'echo "Demo: cache refresh finished successfully"; sleep 2']
+          resources:
+            requests: {cpu: 5m, memory: 8Mi}
+            limits: {cpu: 50m, memory: 32Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: demo-data-export
+  namespace: cleaner-demo
+  labels:
+    app.kubernetes.io/part-of: headlamp-cleaner-demo
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 120
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: headlamp-cleaner-demo
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: task
+          image: docker.io/library/busybox:1.37.0
+          command: [sh, -c, 'echo "Demo: data export finished successfully"; sleep 2']
+          resources:
+            requests: {cpu: 5m, memory: 8Mi}
+            limits: {cpu: 50m, memory: 32Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: demo-broken-import
+  namespace: cleaner-demo
+  labels:
+    app.kubernetes.io/part-of: headlamp-cleaner-demo
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 120
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: headlamp-cleaner-demo
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: task
+          image: docker.io/library/busybox:1.37.0
+          command: [sh, -c, 'echo "Demo: import failed intentionally (invalid sample input)" >&2; exit 1']
+          resources:
+            requests: {cpu: 5m, memory: 8Mi}
+            limits: {cpu: 50m, memory: 32Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: demo-paused-maintenance
+  namespace: cleaner-demo
+  labels:
+    app.kubernetes.io/part-of: headlamp-cleaner-demo
+spec:
+  suspend: true
+  backoffLimit: 0
+  activeDeadlineSeconds: 120
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: headlamp-cleaner-demo
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: task
+          image: docker.io/library/busybox:1.37.0
+          command: [sh, -c, 'echo "Demo: maintenance finished"']
+          resources:
+            requests: {cpu: 5m, memory: 8Mi}
+            limits: {cpu: 50m, memory: 32Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+---
+apiVersion: apps.projectsveltos.io/v1alpha1
+kind: Cleaner
+metadata:
+  name: headlamp-demo-completed-jobs
+  labels:
+    app.kubernetes.io/part-of: headlamp-cleaner-demo
+spec:
+  action: Scan
+  schedule: '*/5 * * * *'
+  resourcePolicySet:
+    resourceSelectors:
+      - group: batch
+        version: v1
+        kind: Job
+        namespace: cleaner-demo
+        labelFilters:
+          - key: app.kubernetes.io/part-of
+            operation: Equal
+            value: headlamp-cleaner-demo
+        evaluate: |
+          function evaluate(obj)
+            if obj.status ~= nil and obj.status.conditions ~= nil then
+              for _, condition in ipairs(obj.status.conditions) do
+                if condition.type == "Complete" and condition.status == "True" then
+                  return { matching = true, message = "Job completed successfully; candidate for cleanup (Scan only)" }
+                end
+              end
+            end
+            return { matching = false }
+          end
+  notifications:
+    - name: report
+      type: CleanerReport
+---
+apiVersion: apps.projectsveltos.io/v1alpha1
+kind: Cleaner
+metadata:
+  name: headlamp-demo-failed-jobs
+  labels:
+    app.kubernetes.io/part-of: headlamp-cleaner-demo
+spec:
+  action: Scan
+  schedule: '*/5 * * * *'
+  resourcePolicySet:
+    resourceSelectors:
+      - group: batch
+        version: v1
+        kind: Job
+        namespace: cleaner-demo
+        labelFilters:
+          - key: app.kubernetes.io/part-of
+            operation: Equal
+            value: headlamp-cleaner-demo
+        evaluate: |
+          function evaluate(obj)
+            if obj.status ~= nil and obj.status.conditions ~= nil then
+              for _, condition in ipairs(obj.status.conditions) do
+                if condition.type == "Failed" and condition.status == "True" then
+                  return { matching = true, message = condition.message or condition.reason or "Job failed" }
+                end
+              end
+            end
+            return { matching = false }
+          end
+  notifications:
+    - name: report
+      type: CleanerReport

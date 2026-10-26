@@ -1,0 +1,247 @@
+import { registerDetailsViewSection, useTranslation } from '@kinvolk/headlamp-plugin/lib';
+import {
+  ConditionsTable,
+  Link,
+  MainInfoSection,
+  SectionBox,
+  Table,
+} from '@kinvolk/headlamp-plugin/lib/components/common';
+import Editor from '@monaco-editor/react';
+import React from 'react';
+import { useParams } from 'react-router-dom';
+import YAML from 'yaml';
+import RemainingTimeDisplay from '../common/RemainingTimeDisplay';
+import { HelmRelease } from '../common/Resources';
+import StatusLabel from '../common/StatusLabel';
+import { getSourceNameAndPluralKind, ObjectEvents } from '../helpers/index';
+import { HelmInventory } from './Inventory';
+
+export function FluxHelmReleaseDetailView(props: { name?: string; namespace?: string }) {
+  const params = useParams<{ namespace: string; name: string }>();
+  const { name = params.name, namespace = params.namespace } = props;
+
+  return (
+    <>
+      <CustomResourceDetails name={name} namespace={namespace} />
+      <ObjectEvents name={name} namespace={namespace} resourceClass={HelmRelease} />
+    </>
+  );
+}
+
+function HelmReleaseDetailsSection({ resource }: { resource: HelmRelease }) {
+  const { t } = useTranslation();
+  if (resource.kind !== 'HelmRelease') return null;
+
+  const themeName = localStorage.getItem('headlampThemePreference');
+
+  const cr = resource;
+
+  return (
+    <>
+      {cr && cr?.jsonData?.spec?.values && (
+        <SectionBox title={t('Values')}>
+          <Editor
+            language="yaml"
+            value={YAML.stringify(cr?.jsonData?.spec?.values)}
+            height={200}
+            theme={themeName === 'dark' ? 'vs-dark' : 'light'}
+          />
+        </SectionBox>
+      )}
+
+      <SectionBox title={t('Inventory')}>
+        <HelmInventory
+          name={resource.metadata.name}
+          namespace={resource.metadata.namespace}
+          resource={resource}
+        />
+      </SectionBox>
+
+      <SectionBox title={t('Dependencies')}>
+        <Table
+          data={cr?.jsonData?.spec?.dependsOn}
+          columns={[
+            {
+              header: t('Name'),
+              accessorFn: item => (
+                <Link
+                  routeName="helm"
+                  params={{
+                    name: item.name,
+                    namespace: item.namespace || resource.metadata.namespace,
+                  }}
+                >
+                  {item.name}
+                </Link>
+              ),
+            },
+            {
+              header: t('Namespace'),
+              accessorFn: item => (
+                <Link
+                  routeName="namespace"
+                  params={{ name: item.namespace || resource.metadata.namespace }}
+                >
+                  {item.namespace || resource.metadata.namespace}
+                </Link>
+              ),
+            },
+          ]}
+        />
+      </SectionBox>
+      <SectionBox title={t('Conditions')}>
+        <ConditionsTable resource={cr?.jsonData} />
+      </SectionBox>
+    </>
+  );
+}
+
+export const registerHelmRelease = () => {
+  registerDetailsViewSection(({ resource }: { resource: HelmRelease }) => (
+    <HelmReleaseDetailsSection resource={resource} />
+  ));
+};
+
+function CustomResourceDetails(props) {
+  const { name, namespace } = props;
+  const [cr] = HelmRelease.useGet(name, namespace);
+  const { t } = useTranslation();
+
+  function prepareExtraInfo(cr) {
+    if (!cr) {
+      return [];
+    }
+    const {
+      name: sourceName,
+      pluralKind: sourcePluralKind,
+      namespace: sourceNamespace,
+    } = getSourceNameAndPluralKind(cr);
+    const extraInfo = [
+      {
+        name: t('Status'),
+        value: <StatusLabel item={cr} />,
+      },
+      {
+        name: t('Chart'),
+        value: sourceName,
+      },
+      {
+        name: t('Reconcile Strategy'),
+        value: cr?.jsonData?.spec.chart?.spec?.reconcileStrategy,
+      },
+    ];
+
+    if (cr?.jsonData?.spec?.chartRef) {
+      extraInfo.push({
+        name: t('Source Ref'),
+        value: (
+          <Link
+            routeName="source"
+            params={{
+              namespace: sourceNamespace ?? cr.jsonData.metadata?.namespace,
+              name: sourceName,
+              pluralName: sourcePluralKind,
+            }}
+          >
+            {sourceName}
+          </Link>
+        ),
+      });
+    }
+
+    if (cr?.jsonData?.spec?.chart?.spec?.sourceRef) {
+      extraInfo.push({
+        name: t('Source Ref'),
+        value: (
+          <Link
+            routeName="source"
+            params={{
+              name: sourceName,
+              namespace: sourceNamespace ?? cr.jsonData.metadata?.namespace,
+              pluralName: sourcePluralKind,
+            }}
+          >
+            {sourceName}
+          </Link>
+        ),
+      });
+    }
+    extraInfo.push({
+      name: t('Version'),
+      value: cr?.jsonData?.spec.chart?.spec?.version,
+    });
+    extraInfo.push({
+      name: t('Suspend'),
+      value: cr?.jsonData.spec?.suspend ? t('True') : t('False'),
+    });
+
+    const interval = cr?.jsonData.spec?.interval;
+    extraInfo.push({
+      name: t('Interval'),
+      value: interval,
+    });
+
+    if (!cr?.jsonData.spec?.suspend) {
+      extraInfo.push({
+        name: t('Next Reconciliation'),
+        value: <RemainingTimeDisplay item={cr} />,
+      });
+    }
+    return extraInfo;
+  }
+
+  const themeName = localStorage.getItem('headlampThemePreference');
+
+  return (
+    <>
+      {cr && <MainInfoSection resource={cr} extraInfo={prepareExtraInfo(cr)} />}
+      {cr && cr?.jsonData?.spec?.values && (
+        <SectionBox title={t('Values')}>
+          <Editor
+            language="yaml"
+            value={YAML.stringify(cr?.jsonData?.spec?.values)}
+            height={200}
+            theme={themeName === 'dark' ? 'vs-dark' : 'light'}
+          />
+        </SectionBox>
+      )}
+
+      <SectionBox title={t('Inventory')}>
+        {cr && <HelmInventory name={name} namespace={namespace} resource={cr} />}
+      </SectionBox>
+
+      <SectionBox title={t('Dependencies')}>
+        <Table
+          data={cr?.jsonData?.spec?.dependsOn}
+          columns={[
+            {
+              header: t('Name'),
+              accessorFn: item => (
+                <Link
+                  routeName="helm"
+                  params={{
+                    name: item.name,
+                    namespace: item.namespace || namespace,
+                  }}
+                >
+                  {item.name}
+                </Link>
+              ),
+            },
+            {
+              header: t('Namespace'),
+              accessorFn: item => (
+                <Link routeName="namespace" params={{ name: item.namespace || namespace }}>
+                  {item.namespace || namespace}
+                </Link>
+              ),
+            },
+          ]}
+        />
+      </SectionBox>
+      <SectionBox title={t('Conditions')}>
+        <ConditionsTable resource={cr?.jsonData} />
+      </SectionBox>
+    </>
+  );
+}
