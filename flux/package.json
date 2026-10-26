@@ -1,0 +1,80 @@
+{
+  "name": "@headlamp-k8s/flux",
+  "version": "0.7.0-draft.7",
+  "description": "Flux GitOps for Headlamp with an operations dashboard, readiness statistics and interactive inventories.",
+  "scripts": {
+    "start": "headlamp-plugin start",
+    "build": "headlamp-plugin build",
+    "package": "headlamp-plugin package",
+    "format": "headlamp-plugin format",
+    "lint": "headlamp-plugin lint",
+    "lint-fix": "headlamp-plugin lint --fix",
+    "tsc": "headlamp-plugin tsc",
+    "storybook": "headlamp-plugin storybook",
+    "storybook-build": "headlamp-plugin storybook-build",
+    "test": "headlamp-plugin test",
+    "i18n": "headlamp-plugin i18n",
+    "dev:cluster": "node scripts/dev-cluster.mjs"
+  },
+  "keywords": [
+    "headlamp",
+    "headlamp-plugin",
+    "kubernetes",
+    "kubernetes-ui",
+    "kubernetes-debugging",
+    "plugins"
+  ],
+  "prettier": "@headlamp-k8s/eslint-config/prettier-config",
+  "eslintConfig": {
+    "extends": [
+      "@headlamp-k8s",
+      "prettier",
+      "plugin:jsx-a11y/recommended"
+    ]
+  },
+  "devDependencies": {
+    "@kinvolk/headlamp-plugin": "^0.14.0"
+  },
+  "dependencies": {
+    "yaml": "^2.5.0",
+    "@xyflow/react": "12.11.0",
+    "ssa-inspector": "file:../ssa"
+  },
+  "overrides": {
+    "typescript": "5.6.2",
+    "ws": "8.21.0",
+    "vitest": "^3.2.6"
+  },
+  "headlamp": {
+    "i18n": [
+      "en",
+      "de",
+      "es",
+      "fr",
+      "it",
+      "ja",
+      "id",
+      "ko",
+      "pt-BR",
+      "ru",
+      "zh-Hans",
+      "zh-Hant",
+      "cs",
+      "nl",
+      "hu",
+      "pt-PT",
+      "pl",
+      "sv",
+      "tr"
+    ],
+    "extraDist": {
+      "LICENSE": "LICENSE",
+      "NOTICE": "NOTICE"
+    }
+  },
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22 <25",
+    "npm": ">=10"
+  }
+}

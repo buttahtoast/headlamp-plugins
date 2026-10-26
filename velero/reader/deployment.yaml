@@ -1,0 +1,88 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: headlamp-velero-reader
+  namespace: velero-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: headlamp-velero-reader
+  namespace: velero-system
+rules:
+  - apiGroups: [velero.io]
+    resources: [downloadrequests]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: headlamp-velero-reader
+  namespace: velero-system
+subjects:
+  - kind: ServiceAccount
+    name: headlamp-velero-reader
+    namespace: velero-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: headlamp-velero-reader
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: headlamp-velero-reader
+  namespace: velero-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: headlamp-velero-reader }
+  template:
+    metadata:
+      labels: { app: headlamp-velero-reader }
+    spec:
+      serviceAccountName: headlamp-velero-reader
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: reader
+          image: node:22.21.1-alpine3.22
+          command: [node, /app/server.mjs]
+          env:
+            - name: VELERO_NAMESPACE
+              valueFrom:
+                fieldRef: { fieldPath: metadata.namespace }
+            - name: ALLOWED_ORIGINS
+              valueFrom:
+                configMapKeyRef:
+                  name: headlamp-velero-reader
+                  key: allowed-origins
+          ports: [{ containerPort: 8080, name: http }]
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+          resources:
+            requests: { cpu: 25m, memory: 48Mi }
+            limits: { memory: 192Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: code, mountPath: /app, readOnly: true }
+      volumes:
+        - name: code
+          configMap: { name: headlamp-velero-reader }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: headlamp-velero-reader
+  namespace: velero-system
+spec:
+  selector: { app: headlamp-velero-reader }
+  ports: [{ port: 8080, targetPort: http, name: http }]

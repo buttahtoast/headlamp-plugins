@@ -1,0 +1,76 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cleaner-demo
+  labels:
+    app.kubernetes.io/part-of: headlamp-cleaner-demo
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: old-application-config
+  namespace: cleaner-demo
+  labels:
+    cleaner-demo: stale
+data:
+  purpose: A harmless resource for testing Cleaner reports.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: retired-feature-flags
+  namespace: cleaner-demo
+  labels:
+    cleaner-demo: stale
+data:
+  purpose: A second harmless resource for testing report filtering.
+---
+apiVersion: apps.projectsveltos.io/v1alpha1
+kind: Cleaner
+metadata:
+  name: headlamp-demo-configmaps
+  labels:
+    app.kubernetes.io/part-of: headlamp-cleaner-demo
+spec:
+  action: Scan
+  schedule: '*/5 * * * *'
+  resourcePolicySet:
+    resourceSelectors:
+      - group: ''
+        version: v1
+        kind: ConfigMap
+        namespace: cleaner-demo
+        labelFilters:
+          - key: cleaner-demo
+            operation: Equal
+            value: stale
+        evaluate: |
+          function evaluate(obj)
+            return { matching = true, message = "Demo configuration marked for review; Scan leaves it unchanged" }
+          end
+  notifications:
+    - name: report
+      type: CleanerReport
+---
+apiVersion: apps.projectsveltos.io/v1alpha1
+kind: Cleaner
+metadata:
+  name: headlamp-demo-failed-pods
+  labels:
+    app.kubernetes.io/part-of: headlamp-cleaner-demo
+spec:
+  action: Scan
+  schedule: '*/5 * * * *'
+  resourcePolicySet:
+    resourceSelectors:
+      - group: ''
+        version: v1
+        kind: Pod
+        namespace: cleaner-demo
+        evaluate: |
+          function evaluate(obj)
+            return { matching = obj.status ~= nil and obj.status.phase == "Failed", message = "Pod is in the Failed phase" }
+          end
+  notifications:
+    - name: report
+      type: CleanerReport

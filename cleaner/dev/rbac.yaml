@@ -1,0 +1,38 @@
+# Bind these roles only to the users/groups that need them. No bindings are
+# installed automatically; the plugin always uses the signed-in user's access.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: headlamp-cleaner-viewer
+rules:
+  - apiGroups: [apps.projectsveltos.io]
+    resources: [cleaners, reports]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: headlamp-cleaner-editor
+rules:
+  - apiGroups: [apps.projectsveltos.io]
+    resources: [cleaners]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [apps.projectsveltos.io]
+    resources: [reports]
+    verbs: [get, list, watch]
+---
+# Snapshot restores instead need get on the Report and get/create/update on
+# the target resources. Grant these through the user's normal workload roles.
+# Service proxy access exposes the dashboard's API, whose operations execute
+# with the controller's permissions. Treat this as operator access, not viewing
+# access. Kubernetes RBAC cannot restrict the downstream dashboard URL paths.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: headlamp-cleaner-operator
+  namespace: k8s-cleaner
+rules:
+  - apiGroups: ['']
+    resources: [services/proxy]
+    resourceNames: ['http:k8s-cleaner-web:9080']
+    verbs: [get, create]

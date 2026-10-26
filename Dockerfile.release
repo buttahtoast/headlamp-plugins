@@ -1,0 +1,3 @@
+# Install the checked plugin payload staged by .github/scripts/plugins.mjs.
+FROM busybox:1.37.0
+COPY plugins/ /plugins/
