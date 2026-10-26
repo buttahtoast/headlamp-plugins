@@ -1,0 +1,11 @@
+version: 0.1.0
+name: cleaner
+displayName: Cleaner
+createdAt: "2026-10-26T15:33:03.286Z"
+description: Manage k8s-cleaner policies, reports, manual runs and rollback in Headlamp.
+prerelease: false
+homeURL: https://github.com/buttahtoast/headlamp-plugins
+annotations:
+  headlamp/plugin/version-compat: ">=0.46.0"
+  headlamp/plugin/archive-url: https://github.com/buttahtoast/headlamp-plugins/releases/download/v0.1.0/cleaner-0.1.0.tar.gz
+  headlamp/plugin/archive-checksum: sha256:c17fb0a43af6e36174e0292e4df70152447699b152e7910fe8e95977ff576497
