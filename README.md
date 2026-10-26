@@ -12,8 +12,6 @@ This repository contains various plugins for [Headlamp](https://headlamp.dev/), 
 - **SSH Proxy**: (Placeholder - under development)
 - **Web Proxy**: (Placeholder - under development)
 
-The old Capsule and kubeconfig-oidc plugins have been removed from this repository.
-
 ## Releases
 
 Pull requests and pushes to `main` validate every plugin using Capsule's shared

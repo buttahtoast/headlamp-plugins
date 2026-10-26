@@ -17,10 +17,6 @@ const plugins = fs
   .flatMap((entry) => {
     const pkg = readJSON(path.join(entry.name, 'package.json'));
     if (!pkg.devDependencies?.['@kinvolk/headlamp-plugin']) return [];
-    assert.ok(
-      !['capsule', 'kubeconfig-oidc'].includes(entry.name),
-      'Retired plugin found'
-    );
     const catalogName = pkg.name.split('/').at(-1);
     assert.match(entry.name, /^[a-z0-9-]+$/);
     assert.match(catalogName, /^[a-z0-9-]+$/);
