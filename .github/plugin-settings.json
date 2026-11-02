@@ -1,4 +1,5 @@
 {
+  "cert-manager": { "installDirectory": "headlamp_cert-manager" },
   "flux": { "installDirectory": "headlamp_flux" },
   "ssa": { "installDirectory": "ssa-inspector" }
 }

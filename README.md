@@ -6,6 +6,7 @@ This repository contains various plugins for [Headlamp](https://headlamp.dev/), 
 
 - **[SSA Inspector](ssa/README.md)**: Inspect Apply/Update field ownership on Kubernetes resource detail pages, with any manager and optional status ownership.
 - **[Flux](flux/README.md)**: Flux GitOps dashboard, list statistics and interactive Kustomization/HelmRelease inventory diagrams.
+- **[cert-manager](cert-manager/README.md)**: Certificate renewal and creation, expiry visibility, issuer health and interactive issuance relationship diagrams.
 - **[Velero](velero/README.md)**: Manage backups, schedules, storage and restores; inspect archives, compare objects, and recover individual resources.
 - **[Cleaner](cleaner/README.md)**: Manage k8s-cleaner policies, latest reports, Lua selectors, manual runs, and rollback. Includes a live development workflow for kind.
 - **KubeVirt**: Adds support for managing KubeVirt resources like Virtual Machines and Instances.
@@ -20,13 +21,14 @@ action, following the approach in
 [`projectcapsule/change-windows`](https://github.com/projectcapsule/change-windows).
 These builds do not publish anything.
 
-Pushing a tag such as `v0.1.0` releases **all five plugins** at version `0.1.0`.
+Pushing a tag such as `v0.1.0` releases **all six plugins** at version `0.1.0`.
 The workflow stamps the package and lockfile versions in its checkout, including
 Flux's local SSA dependency; it does not commit these changes back to the source
 branch. All plugin checks must pass before publication starts.
 
 | Plugin | Release archive | Container image | Plugin directory in image |
 | --- | --- | --- | --- |
+| cert-manager | `headlamp-k8s-cert-manager-<version>.tar.gz` | `ghcr.io/buttahtoast/headlamp-plugins/cert-manager` | `/plugins/headlamp_cert-manager` |
 | Cleaner | `cleaner-<version>.tar.gz` | `ghcr.io/buttahtoast/headlamp-plugins/cleaner` | `/plugins/cleaner` |
 | Flux | `headlamp-k8s-flux-<version>.tar.gz` | `ghcr.io/buttahtoast/headlamp-plugins/flux` | `/plugins/headlamp_flux` |
 | KubeVirt | `kubevirt-<version>.tar.gz` | `ghcr.io/buttahtoast/headlamp-plugins/kubevirt` | `/plugins/kubevirt` |
