@@ -1,0 +1,13 @@
+version: 0.1.1
+name: flux
+displayName: Flux
+createdAt: "2026-11-02T18:32:58.283Z"
+description: Flux GitOps operations, reconciliation and interactive resource
+  inventories in Headlamp.
+license: Apache-2.0
+prerelease: false
+homeURL: https://github.com/buttahtoast/headlamp-plugins
+annotations:
+  headlamp/plugin/version-compat: ">=0.46.0"
+  headlamp/plugin/archive-url: https://github.com/buttahtoast/headlamp-plugins/releases/download/v0.1.1/headlamp-k8s-flux-0.1.1.tar.gz
+  headlamp/plugin/archive-checksum: sha256:94cf43ef4a0b94a75dd4dd620c4c6e4d2dcb4e0de000ce874911e5d81cd77cfe
