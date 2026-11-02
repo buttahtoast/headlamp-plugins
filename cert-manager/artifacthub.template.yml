@@ -1,0 +1,10 @@
+version: 0.0.0
+name: cert-manager
+displayName: cert-manager
+createdAt: "1970-01-01T00:00:00Z"
+description: Certificate renewal, expiry visibility, issuer health and cert-manager diagnostics in Headlamp.
+license: Apache-2.0
+prerelease: true
+homeURL: https://github.com/buttahtoast/headlamp-plugins
+annotations:
+  headlamp/plugin/version-compat: ">=0.46.0"
