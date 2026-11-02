@@ -1,0 +1,13 @@
+version: 0.1.1
+name: ssa-inspector
+displayName: SSA Inspector
+createdAt: "2026-11-02T18:33:36.266Z"
+description: Inspect Kubernetes field-manager ownership and server-side apply
+  diffs in Headlamp.
+license: Apache-2.0
+prerelease: false
+homeURL: https://github.com/buttahtoast/headlamp-plugins
+annotations:
+  headlamp/plugin/version-compat: ">=0.46.0"
+  headlamp/plugin/archive-url: https://github.com/buttahtoast/headlamp-plugins/releases/download/v0.1.1/ssa-inspector-0.1.1.tar.gz
+  headlamp/plugin/archive-checksum: sha256:d12e0dba6509bdfb9d9209d6992678b59cbc816342adad0114fee6e59bbe4b77
