@@ -1,0 +1,8 @@
+buttah-kubeconfig Headlamp plugin
+
+Downloads a kubeconfig whose user is an OIDC ID token. The issuer, client,
+shell image, API server, and cluster name come from
+buttah-kubeconfig-config/config.json. The plugin does not embed those values.
+
+Headlamp is licensed under Apache License 2.0.
+https://github.com/kubernetes-sigs/headlamp
