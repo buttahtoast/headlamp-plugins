@@ -1,0 +1,13 @@
+version: 0.2.1
+name: buttah-kubeconfig
+displayName: Kubeconfig
+createdAt: "2026-11-04T08:10:23.029Z"
+description: Download a kubeconfig from a configured OIDC client. No identity
+  provider is built in.
+license: Apache-2.0
+prerelease: false
+homeURL: https://github.com/buttahtoast/headlamp-plugins
+annotations:
+  headlamp/plugin/version-compat: ">=0.46.0"
+  headlamp/plugin/archive-url: https://github.com/buttahtoast/headlamp-plugins/releases/download/v0.2.1/buttah-kubeconfig-0.2.1.tar.gz
+  headlamp/plugin/archive-checksum: sha256:af10742a830df507478e9ace2d5814d81430fa57a4bdf7e2d37100c758e2c1de
