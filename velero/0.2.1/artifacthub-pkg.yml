@@ -1,0 +1,13 @@
+version: 0.2.1
+name: velero
+displayName: Velero
+createdAt: "2026-11-04T08:12:32.645Z"
+description: Inspect Velero backups, manage schedules, compare archived objects
+  and restore resources in Headlamp.
+license: Apache-2.0
+prerelease: false
+homeURL: https://github.com/buttahtoast/headlamp-plugins
+annotations:
+  headlamp/plugin/version-compat: ">=0.46.0"
+  headlamp/plugin/archive-url: https://github.com/buttahtoast/headlamp-plugins/releases/download/v0.2.1/velero-0.2.1.tar.gz
+  headlamp/plugin/archive-checksum: sha256:33634f95bf052e20edaab1d250be7cc78a40f91852b1d317bd02619b8f39bef3
