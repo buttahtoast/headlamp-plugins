@@ -1,0 +1,11 @@
+version: 0.2.1
+name: kubevirt
+displayName: KubeVirt
+createdAt: "2026-11-04T08:12:01.480Z"
+description: Manage KubeVirt virtual machines and instances in Headlamp.
+prerelease: false
+homeURL: https://github.com/buttahtoast/headlamp-plugins
+annotations:
+  headlamp/plugin/version-compat: ">=0.46.0"
+  headlamp/plugin/archive-url: https://github.com/buttahtoast/headlamp-plugins/releases/download/v0.2.1/kubevirt-0.2.1.tar.gz
+  headlamp/plugin/archive-checksum: sha256:77d78a676c050cc6eb3d4b3a2f18710600d6985b97e941de4321f5beb7ec1577
