@@ -12,9 +12,7 @@ import { startBookmarks } from './bookmarkStore';
 
 function BookmarkSettings(props: PluginSettingsDetailsProps) {
   void props;
-  return (
-    <p>Stars are saved in this browser.</p>
-  );
+  return <p>Stars are saved in this browser.</p>;
 }
 
 registerPluginSettings('buttah-bookmarks', BookmarkSettings, false);
