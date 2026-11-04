@@ -1,0 +1,13 @@
+version: 0.2.1
+name: buttah-bookmarks
+displayName: Bookmarks
+createdAt: "2026-11-04T08:10:08.288Z"
+description: Star navigation rows and resource pages, then jump back from a
+  pinned sidebar section.
+license: Apache-2.0
+prerelease: false
+homeURL: https://github.com/buttahtoast/headlamp-plugins
+annotations:
+  headlamp/plugin/version-compat: ">=0.46.0"
+  headlamp/plugin/archive-url: https://github.com/buttahtoast/headlamp-plugins/releases/download/v0.2.1/buttah-bookmarks-0.2.1.tar.gz
+  headlamp/plugin/archive-checksum: sha256:adddf877b90cce2177e624036e61870a58352fed008f4934f72ab9979d4ff913
