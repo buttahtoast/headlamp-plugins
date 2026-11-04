@@ -13,10 +13,7 @@ import { startBookmarks } from './bookmarkStore';
 function BookmarkSettings(props: PluginSettingsDetailsProps) {
   void props;
   return (
-    <p>
-      Stars on navigation rows and resource pages are stored in this browser. They follow the active
-      Headlamp theme. Headlamp shows no stars when this plugin is not installed.
-    </p>
+    <p>Stars are saved in this browser.</p>
   );
 }
 

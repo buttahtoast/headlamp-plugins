@@ -16,7 +16,8 @@
     "lint-fix": "headlamp-plugin lint --fix",
     "tsc": "headlamp-plugin tsc",
     "test": "vitest run --config vitest.config.ts",
-    "screenshots": "node scripts/screenshots.mjs"
+    "screenshots": "node scripts/screenshots.mjs",
+    "demo": "node scripts/demo-gif.mjs"
   },
   "keywords": [
     "headlamp",

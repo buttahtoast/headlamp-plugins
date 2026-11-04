@@ -1,0 +1,11 @@
+buttah-shell Headlamp plugin
+
+In-browser kubectl shell. The OIDC client, issuer, token endpoints, shell
+image, and namespace come from buttah-shell-config/config.json. The plugin
+does not embed those values.
+
+Headlamp is licensed under Apache License 2.0.
+https://github.com/kubernetes-sigs/headlamp
+
+The terminal UI uses @xterm/xterm and @xterm/addon-fit, MIT licensed.
+https://github.com/xtermjs/xterm.js

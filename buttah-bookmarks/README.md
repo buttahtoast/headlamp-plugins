@@ -14,6 +14,12 @@ The controls follow Headlamp's theme.
 
 Plugin settings explain that the list stays in the browser. There is no cluster write.
 
+## Demo
+
+![Starring Pods and Deployments](demo/bookmarks.gif)
+
+`demo/bookmarks.gif` is Headlamp v0.46.0 on a kind cluster. Starring Pods and Deployments pins them to the top of the sidebar. `npm run demo` records it again. It reads `HEADLAMP_URL` (default `http://127.0.0.1:4466`) and `HEADLAMP_CLUSTER` (default `shell`).
+
 ## Screenshots
 
 These are Headlamp v0.46.0 on a kind cluster named `bookmarks`. Pods and Deployments are starred. The Jobs row is showing its outline star on hover. The table is the cluster's real pod list, including the `shop` workloads.

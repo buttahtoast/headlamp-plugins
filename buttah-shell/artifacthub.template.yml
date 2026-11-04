@@ -1,0 +1,10 @@
+version: 0.0.0
+name: buttah-shell
+displayName: Shell
+createdAt: "2026-11-02T00:00:00Z"
+description: In-browser kubectl shell for Headlamp, using a configured OIDC client.
+license: Apache-2.0
+prerelease: false
+homeURL: https://github.com/buttahtoast/headlamp-plugins
+annotations:
+  headlamp/plugin/version-compat: ">=0.46.0"

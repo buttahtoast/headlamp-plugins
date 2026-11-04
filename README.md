@@ -9,9 +9,11 @@ This repository contains various plugins for [Headlamp](https://headlamp.dev/), 
 - **[cert-manager](cert-manager/README.md)**: Certificate renewal and creation, expiry visibility, issuer health and interactive issuance relationship diagrams.
 - **[Velero](velero/README.md)**: Manage backups, schedules, storage and restores; inspect archives, compare objects, and recover individual resources.
 - **[Bookmarks](buttah-bookmarks/README.md)**: Star navigation rows and resource pages, then pin those shortcuts to the top of the sidebar.
+- **[Shell](buttah-shell/README.md)**: In-browser kubectl shell. The OIDC client and shell image come from `buttah-shell-config/config.json`.
+- **[Kubeconfig](buttah-kubeconfig/README.md)**: Download a kubeconfig. The server and OIDC client come from `buttah-kubeconfig-config/config.json`.
 - **[Cleaner](cleaner/README.md)**: Manage k8s-cleaner policies, latest reports, Lua selectors, manual runs, and rollback. Includes a live development workflow for kind.
 - **KubeVirt**: Adds support for managing KubeVirt resources like Virtual Machines and Instances.
-- **SSH Proxy**: (Placeholder - under development)
+
 - **Web Proxy**: (Placeholder - under development)
 
 ## Releases
@@ -22,7 +24,7 @@ action, following the approach in
 [`projectcapsule/change-windows`](https://github.com/projectcapsule/change-windows).
 These builds do not publish anything.
 
-Pushing a tag such as `v0.1.0` releases **all seven plugins** at version `0.1.0`.
+Pushing a tag such as `v0.1.0` releases **all nine plugins** at version `0.1.0`.
 The workflow stamps the package and lockfile versions in its checkout, including
 Flux's local SSA dependency; it does not commit these changes back to the source
 branch. All plugin checks must pass before publication starts.
@@ -36,6 +38,8 @@ branch. All plugin checks must pass before publication starts.
 | SSA Inspector | `ssa-inspector-<version>.tar.gz` | `ghcr.io/buttahtoast/headlamp-plugins/ssa` | `/plugins/ssa-inspector` |
 | Velero | `velero-<version>.tar.gz` | `ghcr.io/buttahtoast/headlamp-plugins/velero` | `/plugins/velero` |
 | Bookmarks | `buttah-bookmarks-<version>.tar.gz` | `ghcr.io/buttahtoast/headlamp-plugins/buttah-bookmarks` | `/plugins/buttah-bookmarks` |
+| Shell | `buttah-shell-<version>.tar.gz` | `ghcr.io/buttahtoast/headlamp-plugins/buttah-shell` | `/plugins/buttah-shell` |
+| Kubeconfig | `buttah-kubeconfig-<version>.tar.gz` | `ghcr.io/buttahtoast/headlamp-plugins/buttah-kubeconfig` | `/plugins/buttah-kubeconfig` |
 
 The workflow packages the checked bundles once and uses those artifacts for the
 GitHub release and the `linux/amd64` and `linux/arm64` container images. Images are
